@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sai"
+version = "0.1.0"
+description = "sAI: An open-source multi-agent AI Operating System"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Sai Ganesh Ongolu" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "openai",
+    "python-dotenv",
+    "pyyaml",
+    "pydantic",
+    "httpx",
+    "tenacity",
+    "rich",
+    "textual",
+    "typer",
+    "anyio",
+    "aiofiles",
+    "duckduckgo-search",
+    "GitPython",
+    "pypdf",
+    "python-docx",
+    "openpyxl",
+    "python-pptx",
+    "pandas",
+    "lxml",
+    "beautifulsoup4",
+    "markdown",
+    "pillow",
+    "pymupdf",
+    "tree-sitter",
+    "tree-sitter-language-pack",
+    "grep-ast",
+    "graphiti-core",
+    "networkx",
+    "neo4j",
+    "orjson",
+    "tqdm",
+    "watchdog",
+    "psutil",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[project.scripts]
+sai = "sai.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sai"]

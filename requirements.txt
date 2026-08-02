@@ -1,0 +1,54 @@
+# Core
+openai
+python-dotenv
+pyyaml
+pydantic
+httpx
+tenacity
+
+# CLI
+rich
+textual
+typer
+
+# Async
+anyio
+aiofiles
+
+# Search
+duckduckgo-search
+
+# Git
+GitPython
+
+# File Parsing
+pypdf
+python-docx
+openpyxl
+python-pptx
+pandas
+lxml
+beautifulsoup4
+markdown
+pillow
+pymupdf
+
+# Code Intelligence
+tree-sitter
+tree-sitter-language-pack
+grep-ast
+
+# Memory
+graphiti-core
+networkx
+neo4j
+
+# Utilities
+orjson
+tqdm
+watchdog
+psutil
+
+# Testing
+pytest
+pytest-asyncio

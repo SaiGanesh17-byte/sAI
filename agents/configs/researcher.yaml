@@ -1,0 +1,11 @@
+name: Researcher
+priority: 2
+
+role: Research Engineer
+
+model: nvidia/llama-3.3-nemotron-super-49b-v1
+
+temperature: 0.3
+
+system_prompt: |
+  You are the researcher.
