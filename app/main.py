@@ -12,13 +12,33 @@ from core.task import Task
 
 
 def main():
+    if "--tui" in sys.argv or "-t" in sys.argv:
+        from ui.terminal import SaiApp
+        app = SaiApp()
+        app.run()
+        return
+    if "--run" in sys.argv or "-r" in sys.argv:
+        try:
+            flag_idx = sys.argv.index("--run") if "--run" in sys.argv else sys.argv.index("-r")
+            goal = sys.argv[flag_idx + 1]
+        except (ValueError, IndexError):
+            print("Error: Please provide a goal prompt, e.g. python3 app/main.py --run 'fix hello.py'")
+            sys.exit(1)
+        print(f"\n=== sAI Multi-Agent Run: '{goal}' ===\n")
+        task = Task(goal=goal)
+        orchestrator = Orchestrator()
+        orchestrator.run(task)
+        return
     if "--cli" in sys.argv or "-c" in sys.argv:
         print("\n=== sAI Multi-Agent Engine (Console CLI) ===\n")
         goal = input("You: ")
         task = Task(goal=goal)
         orchestrator = Orchestrator()
         orchestrator.run(task)
-    elif "--web" in sys.argv or "-w" in sys.argv:
+        return
+
+    # Default to running Web UI
+    else:
         import json
         import webbrowser
         import threading
@@ -1094,6 +1114,90 @@ def main():
                             "message": str(e)
                         }).encode('utf-8'))
 
+                elif self.path == "/api/workspace/revert_to":
+                    try:
+                        content_length = int(self.headers['Content-Length'])
+                        post_data = self.rfile.read(content_length)
+                        data = json.loads(post_data.decode('utf-8'))
+                        
+                        session_id = data.get("session_id", "default_session")
+                        target_id = int(data.get("transaction_id", 0))
+                        from core.security import revert_to_transaction_snapshot
+                        success, message = revert_to_transaction_snapshot(session_id, target_id)
+                        
+                        self.send_response(200)
+                        self.send_header("Content-type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "status": "success" if success else "failed",
+                            "message": message
+                        }).encode('utf-8'))
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header("Content-type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "status": "error",
+                            "message": str(e)
+                        }).encode('utf-8'))
+
+                elif self.path == "/api/terminal/execute":
+                    try:
+                        content_length = int(self.headers['Content-Length'])
+                        post_data = self.rfile.read(content_length)
+                        data = json.loads(post_data.decode('utf-8'))
+                        
+                        command = data.get("command", "").strip()
+                        if not command:
+                            raise Exception("Empty command.")
+                            
+                        from core.settings import load_settings
+                        from core.security import get_current_workspace
+                        settings = load_settings()
+                        cwd = get_current_workspace()
+                        
+                        run_cmd = command
+                        is_sandboxed = False
+                        
+                        if settings.get("docker_sandbox", False):
+                            try:
+                                import subprocess
+                                check = subprocess.run(["docker", "info"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2.0)
+                                if check.returncode == 0:
+                                    run_cmd = f'docker run --rm -v "{cwd}":/workspace -w /workspace alpine sh -c {repr(command)}'
+                                    is_sandboxed = True
+                            except Exception:
+                                pass
+                                
+                        import subprocess
+                        result = subprocess.run(
+                            run_cmd,
+                            shell=True,
+                            cwd=str(cwd),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                            timeout=15.0
+                        )
+                        
+                        self.send_response(200)
+                        self.send_header("Content-type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "status": "success",
+                            "output": result.stdout,
+                            "exit_code": result.returncode,
+                            "sandboxed": is_sandboxed
+                        }).encode('utf-8'))
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header("Content-type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "status": "error",
+                            "message": str(e)
+                        }).encode('utf-8'))
+
                 elif self.path == "/api/git/branch":
                     try:
                         content_length = int(self.headers['Content-Length'])
@@ -1632,10 +1736,6 @@ def main():
         except KeyboardInterrupt:
             print("\nShutting down sAI Web Server...")
             server.server_close()
-    else:
-        from ui.terminal import SaiApp
-        app = SaiApp()
-        app.run()
 
 def parse_outline_symbols(file_path: Path) -> list:
     symbols = []

@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>sAI — Multi-Agent AI Operating System</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;600;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #0b0c10;
+            --bg-surface: #13151a;
+            --bg-card: #1f2833;
+            --accent-cyan: #66fcf1;
+            --accent-cyan-dark: #45a29e;
+            --text-main: #c5c6c7;
+            --text-bright: #ffffff;
+            --shadow-glow: rgba(102, 252, 241, 0.15);
+            --border-glow: rgba(102, 252, 241, 0.25);
+            --accent-revert: #e7886f;
+            --accent-green: #27c93f;
+            --accent-red: #ff5f56;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            line-height: 1.6;
+            overflow-x: hidden;
+            padding-bottom: 60px;
+        }
+
+        /* Typography */
+        h1, h2, h3, h4 {
+            font-family: 'Space Grotesk', sans-serif;
+            color: var(--text-bright);
+            font-weight: 700;
+        }
+
+        /* Header Navigation */
+        header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(11, 12, 16, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            z-index: 100;
+            padding: 16px 5%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            font-size: 24px;
+            text-shadow: 0 0 10px var(--accent-cyan);
+        }
+
+        .logo-text {
+            font-size: 20px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: var(--text-bright);
+        }
+
+        .logo-text span {
+            color: var(--accent-cyan);
+        }
+
+        nav {
+            display: flex;
+            gap: 24px;
+        }
+
+        nav a {
+            color: var(--text-main);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        nav a:hover, nav a.active {
+            color: var(--accent-cyan);
+        }
+
+        /* Hero Section */
+        .hero {
+            padding: 140px 5% 60px;
+            text-align: center;
+            position: relative;
+            background: radial-gradient(circle at center, rgba(102, 252, 241, 0.05) 0%, transparent 60%);
+        }
+
+        .hero h1 {
+            font-size: 48px;
+            letter-spacing: -1px;
+            margin-bottom: 18px;
+            line-height: 1.2;
+        }
+
+        .hero h1 span {
+            background: linear-gradient(135deg, var(--accent-cyan) 0%, var(--accent-cyan-dark) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero p {
+            font-size: 18px;
+            max-width: 700px;
+            margin: 0 auto 30px;
+            opacity: 0.8;
+        }
+
+        /* CTA Buttons */
+        .cta-group {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 40px;
+        }
+
+        .btn {
+            padding: 12px 28px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--accent-cyan);
+            color: var(--bg-base);
+            box-shadow: 0 4px 15px var(--shadow-glow);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 252, 241, 0.3);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-bright);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+        }
+
+        /* Main Layout Grid */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Section Styling */
+        section {
+            padding: 80px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .section-header h2 {
+            font-size: 32px;
+            margin-bottom: 12px;
+        }
+
+        .section-header p {
+            font-size: 16px;
+            opacity: 0.7;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* Cards Layout */
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 24px;
+        }
+
+        .card {
+            background: var(--bg-surface);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 30px;
+            transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at 10% 10%, rgba(102, 252, 241, 0.08) 0%, transparent 50%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: var(--border-glow);
+            box-shadow: 0 10px 30px var(--shadow-glow);
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        .card-icon {
+            font-size: 32px;
+            margin-bottom: 20px;
+            display: inline-block;
+        }
+
+        .card h3 {
+            font-size: 20px;
+            margin-bottom: 12px;
+        }
+
+        .card p {
+            font-size: 14.5px;
+            opacity: 0.8;
+            line-height: 1.6;
+        }
+
+        /* SVG Architecture Diagram */
+        .arch-container {
+            background: var(--bg-surface);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 24px;
+            padding: 40px;
+            margin-top: 30px;
+            position: relative;
+        }
+
+        .arch-diagram {
+            width: 100%;
+            height: auto;
+            max-height: 500px;
+        }
+
+        .arch-node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .arch-node:hover {
+            filter: drop-shadow(0px 0px 8px rgba(102, 252, 241, 0.8));
+        }
+
+        .arch-info-box {
+            margin-top: 24px;
+            background: rgba(255, 255, 255, 0.03);
+            border-left: 4px solid var(--accent-cyan);
+            padding: 16px 20px;
+            border-radius: 8px;
+            font-size: 14.5px;
+        }
+
+        /* Interactive Terminal Mock */
+        .terminal-mock {
+            background: #0f1015;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            overflow: hidden;
+            max-width: 800px;
+            margin: 40px auto 0;
+            text-align: left;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+        }
+
+        .terminal-header {
+            background: #191b22;
+            padding: 12px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .terminal-dots {
+            display: flex;
+            gap: 6px;
+        }
+
+        .terminal-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .dot-red { background: #ff5f56; }
+        .dot-yellow { background: #ffbd2e; }
+        .dot-green { background: #27c93f; }
+
+        .terminal-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 11px;
+            opacity: 0.6;
+            letter-spacing: 1px;
+        }
+
+        .terminal-body {
+            padding: 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12.5px;
+            height: 320px;
+            overflow-y: auto;
+            color: #d1d2d3;
+        }
+
+        .terminal-line {
+            margin-bottom: 10px;
+            opacity: 0.95;
+        }
+
+        .terminal-prompt {
+            color: var(--accent-cyan);
+        }
+
+        .terminal-input-btn-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 14px 20px;
+            background: #14161e;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .term-chip {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-main);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .term-chip:hover {
+            background: var(--accent-cyan);
+            color: var(--bg-base);
+            border-color: var(--accent-cyan);
+        }
+
+        /* Interactive Tabs */
+        .tab-menu {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 40px;
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: var(--text-main);
+            padding: 10px 24px;
+            border-radius: 12px;
+            font-size: 13.5px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .tab-btn.active {
+            background: var(--accent-cyan);
+            color: var(--bg-base);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 4px 12px var(--shadow-glow);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.4s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Revert Bench Timeline visualizer */
+        .timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .timeline-item {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 14px 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .timeline-item span {
+            font-size: 13px;
+        }
+
+        .revert-badge {
+            background: rgba(231,136,111,0.12);
+            color: var(--accent-revert);
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            border: 1px solid rgba(231,136,111,0.2);
+        }
+
+        /* Developer Guides Block styling */
+        .code-block-container {
+            background: #0f1015;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .code-header {
+            background: #161820;
+            padding: 8px 16px;
+            font-size: 11px;
+            opacity: 0.6;
+            font-family: 'JetBrains Mono', monospace;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .code-body {
+            padding: 16px;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            color: #eceff4;
+        }
+
+        /* Comparison Table matrix */
+        .matrix-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 14px;
+            text-align: left;
+        }
+
+        .matrix-table th {
+            background: rgba(255,255,255,0.03);
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: bold;
+            color: var(--text-bright);
+            padding: 12px 16px;
+            border-bottom: 2px solid rgba(255,255,255,0.08);
+        }
+
+        .matrix-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            opacity: 0.85;
+        }
+
+        .matrix-table tr:hover {
+            background: rgba(255,255,255,0.01);
+        }
+
+        /* Back to top button */
+        .btt-btn {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: var(--accent-cyan);
+            color: var(--bg-base);
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 4px 15px var(--shadow-glow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s ease;
+        }
+
+        .btt-btn.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .btt-btn:hover {
+            transform: translateY(-4px);
+        }
+
+        /* Footer styling */
+        footer {
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 40px 5% 0;
+            text-align: center;
+            margin-top: 60px;
+        }
+
+        footer p {
+            font-size: 13px;
+            opacity: 0.5;
+        }
+        
+        .clay-input-sub {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-bright);
+            padding: 10px 14px;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header bar -->
+    <header>
+        <div class="logo-group">
+            <span class="logo-icon">🚀</span>
+            <span class="logo-text">s<span>AI</span></span>
+        </div>
+        <nav>
+            <a href="#overview" class="nav-link active">Overview</a>
+            <a href="#architecture" class="nav-link">Architecture</a>
+            <a href="#surprise" class="nav-link">Security Scan</a>
+            <a href="#interactive" class="nav-link">Try Console</a>
+            <a href="#setup" class="nav-link">Quickstart</a>
+        </nav>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero" id="overview">
+        <div class="container">
+            <h1>The Multi-Agent <span>AI Operating System</span></h1>
+            <p>
+                An asynchronous, event-driven multi-agent orchestration architecture uniting planning, code execution, sandboxed safety gates, and dynamic graph memory models.
+            </p>
+            <div class="cta-group">
+                <a href="#setup" class="btn btn-primary">Quick Start Guide</a>
+                <a href="#interactive" class="btn btn-secondary">Simulate Console</a>
+            </div>
+
+            <!-- Core Feature Grid -->
+            <div class="grid-3" style="margin-top: 60px;">
+                <div class="card">
+                    <span class="card-icon">🧩</span>
+                    <h3>Multi-Agent Swarm</h3>
+                    <p>Coordinates specialized code actors—Planner, Architect, Coder, and Reviewer—collaborating over an event bus to analyze, code, and review changes.</p>
+                </div>
+                <div class="card">
+                    <span class="card-icon">🔄</span>
+                    <h3>Time Travel Undo</h3>
+                    <p>Scrub back and forth through workspace transaction states. Rolls back file writes and deletes created files dynamically from SQLite history snapshots.</p>
+                </div>
+                <div class="card">
+                    <span class="card-icon">🛡️</span>
+                    <h3>Command Execution Gate</h3>
+                    <p>Intercepts potentially harmful commands (e.g. rm, push, npm install) and holds execution until single-use user permission is granted.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Architecture Tab section -->
+    <section id="architecture">
+        <div class="container">
+            <div class="section-header">
+                <h2>System Architecture</h2>
+                <p>Designed with micro-services principles around a centralized Event Bus mediating between user interfaces, agents, and filesystem sandboxes.</p>
+            </div>
+
+            <div class="tab-menu">
+                <button class="tab-btn active" onclick="switchTab('arch-flow')">Data & Agent Flow</button>
+                <button class="tab-btn" onclick="switchTab('revert-bench')">Revert Transaction Flow</button>
+                <button class="tab-btn" onclick="switchTab('security-gate')">Security Access Flow</button>
+                <button class="tab-btn" onclick="switchTab('testing-playbook')">Testing Playbook</button>
+                <button class="tab-btn" onclick="switchTab('matrix-view')">Interface Feature Matrix</button>
+            </div>
+
+            <!-- Tab 1: SVG Diagram -->
+            <div id="arch-flow" class="tab-content active">
+                <div class="arch-container">
+                    <svg viewBox="0 0 800 400" class="arch-diagram">
+                        <!-- Definitions for arrow markers -->
+                        <defs>
+                            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                <path d="M 0 0 L 10 5 L 0 10 z" fill="#45a29e"/>
+                            </marker>
+                            <marker id="arrow-glow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                <path d="M 0 0 L 10 5 L 0 10 z" fill="#66fcf1"/>
+                            </marker>
+                        </defs>
+
+                        <!-- Centralized Event Bus Broker -->
+                        <g class="arch-node" onclick="showArchInfo('event-bus')">
+                            <rect x="250" y="160" width="300" height="80" rx="16" fill="#13151a" stroke="#66fcf1" stroke-width="2"/>
+                            <text x="400" y="200" fill="#ffffff" font-family="'Space Grotesk', sans-serif" font-weight="bold" font-size="14" text-anchor="middle">Central Event Bus</text>
+                            <text x="400" y="220" fill="#66fcf1" font-family="'Outfit', sans-serif" font-size="10.5" text-anchor="middle">Click to inspect Event Hub</text>
+                        </g>
+
+                        <!-- Planner Agent -->
+                        <g class="arch-node" onclick="showArchInfo('planner')">
+                            <rect x="50" y="40" width="140" height="60" rx="12" fill="#1f2833" stroke="rgba(255,255,255,0.1)"/>
+                            <text x="120" y="75" fill="#ffffff" font-family="'Space Grotesk', sans-serif" font-size="13" text-anchor="middle">1. Planner Agent</text>
+                        </g>
+
+                        <!-- Architect Agent -->
+                        <g class="arch-node" onclick="showArchInfo('architect')">
+                            <rect x="230" y="40" width="140" height="60" rx="12" fill="#1f2833" stroke="rgba(255,255,255,0.1)"/>
+                            <text x="300" y="75" fill="#ffffff" font-family="'Space Grotesk', sans-serif" font-size="13" text-anchor="middle">2. Architect Agent</text>
+                        </g>
+
+                        <!-- Coder Agent -->
+                        <g class="arch-node" onclick="showArchInfo('coder')">
+                            <rect x="410" y="40" width="140" height="60" rx="12" fill="#1f2833" stroke="rgba(255,255,255,0.1)"/>
+                            <text x="480" y="75" fill="#ffffff" font-family="'Space Grotesk', sans-serif" font-size="13" text-anchor="middle">3. Coder Agent</text>
+                        </g>
+
+                        <!-- Reviewer Agent -->
+                        <g class="arch-node" onclick="showArchInfo('reviewer')">
+                            <rect x="590" y="40" width="140" height="60" rx="12" fill="#1f2833" stroke="rgba(255,255,255,0.1)"/>
+                            <text x="660" y="75" fill="#ffffff" font-family="'Space Grotesk', sans-serif" font-size="13" text-anchor="middle">4. Reviewer Agent</text>
+                        </g>
+
+                        <!-- Tool Exec Sandbox -->
+                        <g class="arch-node" onclick="showArchInfo('tools')">
+                            <rect x="150" y="300" width="220" height="60" rx="12" fill="#1f2833" stroke="rgba(255,255,255,0.1)"/>
+                            <text x="260" y="335" fill="#ffffff" font-family="'Space Grotesk', sans-serif" font-size="13" text-anchor="middle">Runtime Sandbox & Tools</text>
+                        </g>
+
+                        <!-- Memory (Graphiti + SQLite) -->
+                        <g class="arch-node" onclick="showArchInfo('memory')">
+                            <rect x="430" y="300" width="220" height="60" rx="12" fill="#1f2833" stroke="rgba(255,255,255,0.1)"/>
+                            <text x="540" y="335" fill="#ffffff" font-family="'Space Grotesk', sans-serif" font-size="13" text-anchor="middle">Graphiti & SQLite Memory</text>
+                        </g>
+
+                        <!-- Connective arrows -->
+                        <path d="M 120 100 Q 120 180 250 180" fill="none" stroke="#45a29e" stroke-width="1.5" marker-end="url(#arrow)"/>
+                        <path d="M 300 100 Q 300 160 300 160" fill="none" stroke="#45a29e" stroke-width="1.5" marker-end="url(#arrow)"/>
+                        <path d="M 480 100 Q 480 160 480 160" fill="none" stroke="#45a29e" stroke-width="1.5" marker-end="url(#arrow)"/>
+                        <path d="M 660 100 Q 660 180 550 180" fill="none" stroke="#45a29e" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+                        <path d="M 260 240 Q 260 300 260 300" fill="none" stroke="#66fcf1" stroke-width="1.5" stroke-dasharray="4,4" marker-end="url(#arrow-glow)"/>
+                        <path d="M 540 240 Q 540 300 540 300" fill="none" stroke="#66fcf1" stroke-width="1.5" stroke-dasharray="4,4" marker-end="url(#arrow-glow)"/>
+                    </svg>
+                    <div class="arch-info-box" id="arch-info-text">
+                        <strong>Central Event Bus:</strong> Click on any component node in the diagram above to inspect how sAI routes execution, manages tools, or handles planning steps.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 2: Revert Bench Flow -->
+            <div id="revert-bench" class="tab-content">
+                <div class="arch-container">
+                    <h4 style="margin-bottom:15px; font-size:18px;">How Revert Transactions Work</h4>
+                    <p style="font-size:14.5px; opacity:0.8; margin-bottom:24px;">
+                        Before every tool-initiated file edit, sAI captures the exact state of the target file. If a file is newly created, it records a <code>Null</code> history. These snapshots are written to the database. Clicking Undo retrieves the snapshot and restores the filesystem, deleting the file if it didn't exist before.
+                    </p>
+                    <div class="timeline">
+                        <div class="timeline-item">
+                            <div style="text-align:left;">
+                                <div style="font-weight:600; color:var(--text-bright);">1. File Write / Patch Tool Called</div>
+                                <div style="font-size:11px; opacity:0.5;">Tool intercepts path write call</div>
+                            </div>
+                            <span class="revert-badge" style="background:rgba(102,252,241,0.1); color:var(--accent-cyan); border-color:rgba(102,252,241,0.2);">Capture</span>
+                        </div>
+                        <div class="timeline-item">
+                            <div style="text-align:left;">
+                                <div style="font-weight:600; color:var(--text-bright);">2. SQLite Snapshot Logged</div>
+                                <div style="font-size:11px; opacity:0.5;">Writes state to .sai/transactions.db</div>
+                            </div>
+                            <span class="revert-badge" style="background:rgba(102,252,241,0.1); color:var(--accent-cyan); border-color:rgba(102,252,241,0.2);">Commit DB</span>
+                        </div>
+                        <div class="timeline-item">
+                            <div style="text-align:left;">
+                                <div style="font-weight:600; color:var(--text-bright);">3. Edit Written to Disk</div>
+                                <div style="font-size:11px; opacity:0.5;">Filesystem is mutated successfully</div>
+                            </div>
+                            <span class="revert-badge" style="background:rgba(102,252,241,0.1); color:var(--accent-cyan); border-color:rgba(102,252,241,0.2);">Apply</span>
+                        </div>
+                        <div class="timeline-item">
+                            <div style="text-align:left;">
+                                <div style="font-weight:600; color:var(--accent-revert);">4. User Clicks 'Undo' / Scrubs Timeline</div>
+                                <div style="font-size:11px; opacity:0.5;">Reads snapshot and reverses writes</div>
+                            </div>
+                            <span class="revert-badge">Reverted</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 3: Security Gate Flow -->
+            <div id="security-gate" class="tab-content">
+                <div class="arch-container">
+                    <h4 style="margin-bottom:15px; font-size:18px;">Command Execution Security Gates</h4>
+                    <p style="font-size:14.5px; opacity:0.8; margin-bottom:24px;">
+                        To prevent security leaks, all commands matching shell-dangerous keywords are held at a gateway thread lock. An event is dispatched to the UI rendering a confirmation dialog. Granting approval releases the gate once, consuming the approved token immediately.
+                    </p>
+                    <div style="display:flex; flex-direction:column; gap:12px; font-family:'JetBrains Mono', monospace; font-size:12px; background:rgba(0,0,0,0.2); padding:20px; border-radius:12px; border:1px solid rgba(255,255,255,0.04); text-align:left;">
+                        <div><span style="color:#ff5f56;">[SYSTEM GATE]</span> Intercepted Shell Command: <span style="color:var(--accent-cyan);">rm -rf tests/__pycache__</span></div>
+                        <div style="opacity:0.6;"> -> Command matches prefix rule: "rm "</div>
+                        <div style="opacity:0.6;"> -> Thread suspended. Dispatched EventType.SECURITY_AUTH_NEEDED</div>
+                        <div style="margin-top:8px; border-left:3px solid #ffbd2e; padding-left:12px; color:#ffbd2e;">
+                            Waiting for User authorization... [Approve (Single-use) / Reject]
+                        </div>
+                        <div style="opacity:0.6; margin-top:8px;"> -> User Approved. Added approved command token to set.</div>
+                        <div><span style="color:#27c93f;">[SYSTEM RELEASE]</span> Released lock. Command executed inside sandbox.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 4: Testing Playbook -->
+            <div id="testing-playbook" class="tab-content">
+                <div class="arch-container">
+                    <h4 style="margin-bottom:15px; font-size:18px;">Automated & Manual Testing Playbook</h4>
+                    <p style="font-size:14.5px; opacity:0.8; margin-bottom:24px;">
+                        sAI has multiple testing tiers to verify execution logic, AST gates, transaction rollbacks, and memory caches.
+                    </p>
+                    
+                    <div style="display:flex; flex-direction:column; gap:16px;">
+                        <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); padding:16px; border-radius:12px; text-align:left;">
+                            <div style="font-weight:600; color:var(--accent-cyan); font-size:14px; margin-bottom:6px;">1. Verification of Transaction Snaps</div>
+                            <div style="font-size:12.5px; opacity:0.8; margin-bottom:10px;">Validates file backups and single-file database state reverts.</div>
+                            <div class="code-block-container" style="margin-bottom:0;">
+                                <div class="code-header">BASH</div>
+                                <div class="code-body" style="padding:10px;">python3 scratch/test_transactions.py</div>
+                            </div>
+                        </div>
+
+                        <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); padding:16px; border-radius:12px; text-align:left;">
+                            <div style="font-weight:600; color:var(--accent-cyan); font-size:14px; margin-bottom:6px;">2. Core Suite (Pytest)</div>
+                            <div style="font-size:12.5px; opacity:0.8; margin-bottom:10px;">Runs standard unit tests inside the tests directory.</div>
+                            <div class="code-block-container" style="margin-bottom:0;">
+                                <div class="code-header">BASH</div>
+                                <div class="code-body" style="padding:10px;">pytest tests/</div>
+                            </div>
+                        </div>
+
+                        <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); padding:16px; border-radius:12px; text-align:left;">
+                            <div style="font-weight:600; color:var(--accent-cyan); font-size:14px; margin-bottom:6px;">3. Manual Sandbox Validation</div>
+                            <div style="font-size:12.5px; opacity:0.8; line-height:1.5;">
+                                Launch the Web Dashboard, enable the <strong>Docker Sandbox</strong> switch, open the terminal console and run:
+                                <code style="font-family:monospace; background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px; color:var(--accent-revert);">rm -rf scratch/non_existent</code>.
+                                Observe the glowing execution gate popping up requesting approval!
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 5: Interface Feature Matrix -->
+            <div id="matrix-view" class="tab-content">
+                <div class="arch-container">
+                    <h4 style="margin-bottom:15px; font-size:18px;">Unified Client Interface Comparison</h4>
+                    <p style="font-size:14.5px; opacity:0.8; margin-bottom:18px;">
+                        sAI packages multiple specialized interface layouts managed by a single backend execution gateway.
+                    </p>
+                    
+                    <div style="overflow-x:auto;">
+                        <table class="matrix-table">
+                            <thead>
+                                <tr>
+                                    <th>Feature</th>
+                                    <th>Web Dashboard (`--web`)</th>
+                                    <th>Textual TUI (`--tui`)</th>
+                                    <th>CLI Shell (`--cli`)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Primary Use Case</strong></td>
+                                    <td>Large codebase refactoring, visual edits</td>
+                                    <td>Side-by-side keyboard development</td>
+                                    <td>Quick checks, fast prompts</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Time-Travel Rollback</strong></td>
+                                    <td>Interactive scrubber range slider</td>
+                                    <td>Automatic undo prompts</td>
+                                    <td>Git rollback recommendations</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Security Gate Alerts</strong></td>
+                                    <td>Neumorphic modal overlays</td>
+                                    <td>Inline dialog inputs</td>
+                                    <td>Command confirm prompts</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Monaco Code Editor</strong></td>
+                                    <td>Yes (Scratchpad pane)</td>
+                                    <td>No (standard shell text areas)</td>
+                                    <td>No</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Diagnostics Visuals</strong></td>
+                                    <td>Interactive glow DAG flows & meters</td>
+                                    <td>Split screen stats tables</td>
+                                    <td>Progress bars</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- SURPRISE SECTION: Interactive Shell Security Scanner -->
+    <section id="surprise" style="background: linear-gradient(180deg, var(--bg-base) 0%, rgba(102, 252, 241, 0.02) 100%);">
+        <div class="container">
+            <div class="section-header">
+                <h2>⚡ Interactive sAI Command Security Scan</h2>
+                <p>Type any shell command below to simulate how sAI's security layers evaluate and sandbox command queries in real-time.</p>
+            </div>
+
+            <div style="max-width: 650px; margin: 0 auto; background: var(--bg-surface); border: 1px solid rgba(255, 255, 255, 0.05); padding: 24px; border-radius: 20px; text-align: left;">
+                <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:16px;">
+                    <label style="font-size:12px; font-weight:600; opacity:0.8;">Command Input Probe</label>
+                    <div style="display:flex; gap:10px;">
+                        <input type="text" id="sec-sim-input" class="clay-input-sub" style="flex:1; font-family:'JetBrains Mono', monospace;" value="rm -rf tests/__pycache__" placeholder="Enter shell command...">
+                        <button class="btn btn-primary" style="padding: 10px 20px; border-radius: 8px; font-size: 13px;" onclick="simulateSecurityScan()">Scan Command</button>
+                    </div>
+                </div>
+
+                <div style="font-size:11px; opacity:0.5; margin-bottom:8px; text-transform:uppercase; font-weight:bold;">Security Diagnostics Log:</div>
+                <div id="sec-sim-log" style="background:#0f1015; border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:16px; font-family:'JetBrains Mono', monospace; font-size:12px; min-height:120px; white-space:pre-wrap; color:#eceff4;">
+                    Click "Scan Command" to analyze execution safety parameters.
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Interactive Terminal Mock Playground -->
+    <section id="interactive" style="background: rgba(255,255,255,0.01);">
+        <div class="container">
+            <div class="section-header">
+                <h2>Simulate sAI Console Commands</h2>
+                <p>Click on one of the quick slash commands below to preview how sAI interacts with users, updates memory files, or intercepts actions.</p>
+            </div>
+
+            <div class="terminal-mock">
+                <div class="terminal-header">
+                    <div class="terminal-dots">
+                        <div class="terminal-dot dot-red"></div>
+                        <div class="terminal-dot dot-yellow"></div>
+                        <div class="terminal-dot dot-green"></div>
+                    </div>
+                    <div class="terminal-title">sAI Interactive Shell</div>
+                    <div style="width: 36px;"></div>
+                </div>
+                <div class="terminal-body" id="term-output">
+                    <div class="terminal-line"><span class="terminal-prompt">sAI guest@workspace ~ %</span> Initialized sAI Console v1.0.0</div>
+                    <div class="terminal-line">Type a command or click one of the quick templates below to simulate...</div>
+                </div>
+                <div class="terminal-input-btn-group">
+                    <button class="term-chip" onclick="simulateCommand('/help')">/help</button>
+                    <button class="term-chip" onclick="simulateCommand('/run code-change')">/run rewrite hello.py</button>
+                    <button class="term-chip" onclick="simulateCommand('/clear')">/clear</button>
+                    <button class="term-chip" onclick="simulateCommand('/security')">Simulate rm -rf</button>
+                    <button class="term-chip" onclick="simulateCommand('/theme')">Cycle Theme</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Setup Guide Section -->
+    <section id="setup">
+        <div class="container">
+            <div class="section-header">
+                <h2>Quick Start & Setup</h2>
+                <p>Get sAI up and running locally in under 3 minutes.</p>
+            </div>
+
+            <div style="max-width: 800px; margin: 0 auto; text-align: left;">
+                <h3 style="font-size:18px; margin-bottom:12px;">1. Clone & Set Environment</h3>
+                <p style="font-size:14.5px; opacity:0.8; margin-bottom:14px;">Ensure you have python 3.8+ and pip configured. Setup your remote API Keys:</p>
+                <div class="code-block-container">
+                    <div class="code-header">BASH</div>
+                    <div class="code-body">
+                        git clone https://github.com/SaiGanesh17-byte/sAI.git<br>
+                        cd sAI<br>
+                        cp .env.template .env
+                    </div>
+                </div>
+
+                <h3 style="font-size:18px; margin-bottom:12px; margin-top:30px;">2. Install Dependencies</h3>
+                <p style="font-size:14.5px; opacity:0.8; margin-bottom:14px;">Build virtual environment and compile standard requirements:</p>
+                <div class="code-block-container">
+                    <div class="code-header">BASH</div>
+                    <div class="code-body">
+                        python3 -m venv venv<br>
+                        source venv/bin/activate<br>
+                        pip install -r requirements.txt
+                    </div>
+                </div>
+
+                <h3 style="font-size:18px; margin-bottom:12px; margin-top:30px;">3. Start the sAI Application</h3>
+                <p style="font-size:14.5px; opacity:0.8; margin-bottom:14px;">sAI offers three visual interface options to interact with your codebase depending on your workflow:</p>
+                
+                <div style="display:flex; flex-direction:column; gap:16px; margin-top:10px;">
+                    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); padding:16px; border-radius:12px; text-align:left;">
+                        <div style="font-weight:600; color:var(--accent-cyan); font-size:14px; margin-bottom:6px;">Option A: Interactive Web Dashboard (Recommended)</div>
+                        <div style="font-size:12.5px; opacity:0.8; margin-bottom:10px;">Launches the full neumorphic visual dashboard on port 8000 (includes file pinning, CPU profilers, and DAG inspects).</div>
+                        <div class="code-block-container" style="margin-bottom:0;">
+                            <div class="code-header">BASH</div>
+                            <div class="code-body" style="padding:10px;">python3 app/main.py --web</div>
+                        </div>
+                    </div>
+
+                    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); padding:16px; border-radius:12px; text-align:left;">
+                        <div style="font-weight:600; color:var(--accent-cyan); font-size:14px; margin-bottom:6px;">Option B: Interactive Terminal TUI Console</div>
+                        <div style="font-size:12.5px; opacity:0.8; margin-bottom:10px;">Launches a premium terminal interface with a side-by-side chat history container and inspector.</div>
+                        <div class="code-block-container" style="margin-bottom:0;">
+                            <div class="code-header">BASH</div>
+                            <div class="code-body" style="padding:10px;">python3 ui/terminal.py</div>
+                        </div>
+                    </div>
+
+                    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); padding:16px; border-radius:12px; text-align:left;">
+                        <div style="font-weight:600; color:var(--accent-cyan); font-size:14px; margin-bottom:6px;">Option C: Minimalist CLI prompt</div>
+                        <div style="font-size:12.5px; opacity:0.8; margin-bottom:10px;">Launches a lightweight conversational interface directly in your shell stream.</div>
+                        <div class="code-block-container" style="margin-bottom:0;">
+                            <div class="code-header">BASH</div>
+                            <div class="code-body" style="padding:10px;">python3 app/main.py --cli</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Float back to top -->
+    <button class="btt-btn" id="btt-btn" onclick="scrollToTop()">▲</button>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <p>© 2026 sAI Multi-Agent AI OS platform. Open Source under MIT License.</p>
+        </div>
+    </footer>
+
+    <!-- Interactive Logic Script -->
+    <script>
+        // Tab switching logic
+        function switchTab(tabId) {
+            const tabs = document.querySelectorAll('.tab-content');
+            const buttons = document.querySelectorAll('.tab-btn');
+            
+            tabs.forEach(t => t.classList.remove('active'));
+            buttons.forEach(b => b.classList.remove('active'));
+            
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // Architecture info boxes descriptions
+        const infoData = {
+            'event-bus': '<strong>Central Event Bus:</strong> The main broker pipeline connecting agents, tools, memory indexes, and client WebSockets. It dispatches event types like AGENT_STARTED, TOOL_FINISHED, and SECURITY_AUTH_NEEDED in real-time.',
+            'planner': '<strong>1. Planner Agent:</strong> Takes the main task prompt, analyzes the active repository directories, and breaks down the task into milestones. Coordinates dependencies before execution.',
+            'architect': '<strong>2. Architect Agent:</strong> Focuses on target codebase structures. Pinpoints class methods, file dependencies, and designs the specific code changes.',
+            'coder': '<strong>3. Coder Agent:</strong> Modifies target files using AST structural searches or edits, invoking write_file and patch_file tools inside the sandbox.',
+            'reviewer': '<strong>4. Reviewer Agent:</strong> Audits the Coder\'s output against Security, Style, and Performance focus chips. Automatically triggers style repairs or alerts users to Tier 2 diff review modals.',
+            'tools': '<strong>Runtime Sandbox & Tools:</strong> Controls file write tools, git status utilities, and terminal subprocess executors. If Docker sandbox toggle is on, tools wrap tasks inside isolated Alpine containers.',
+            'memory': '<strong>Graphiti & SQLite Memory:</strong> Manages persistent facts list, user constraints, and active session histories inside relational and semantic data frames.'
+        };
+
+        function showArchInfo(nodeId) {
+            const box = document.getElementById('arch-info-text');
+            if (infoData[nodeId]) {
+                box.innerHTML = infoData[nodeId];
+                box.style.animation = 'none';
+                box.offsetHeight; // trigger reflow
+                box.style.animation = 'fadeIn 0.3s ease';
+            }
+        }
+
+        // Terminal Mock Simulator
+        function simulateCommand(cmd) {
+            const term = document.getElementById('term-output');
+            let outputLines = [];
+            
+            if (cmd === '/help') {
+                outputLines = [
+                    `<span class="terminal-prompt">sAI guest@workspace ~ %</span> /help`,
+                    `Available Slash Commands:`,
+                    `  /help       - Display available CLI commands and keybinding listings`,
+                    `  /clear      - Wipes server conversation buffers and clears console card history`,
+                    `  /theme      - Cycles console visual theme styles (Neumorphic Glassmorphic)`,
+                    `  /run &lt;cmd&gt;  - Dispatches execution tasks to Planner and Coder agents`
+                ];
+            } else if (cmd === '/clear') {
+                term.innerHTML = `<div class="terminal-line"><span class="terminal-prompt">sAI guest@workspace ~ %</span> /clear</div>
+                                  <div class="terminal-line">Console cleared. Session memory buffers purged from backend.</div>`;
+                return;
+            } else if (cmd === '/run code-change') {
+                outputLines = [
+                    `<span class="terminal-prompt">sAI guest@workspace ~ %</span> /run rewrite hello.py to say greeting`,
+                    `<span style="color:#27c93f;">[PLANNER]</span> Decomposing tasks: 1. Read hello.py, 2. Patch greeting line, 3. Validate AST`,
+                    `<span style="color:#ffbd2e;">[CODER]</span> Rewriting hello.py using PatchFileTool...`,
+                    `<span style="color:#66fcf1;">[SYSTEM]</span> Saved pre-patch transaction snapshot to .sai/transactions.db`,
+                    `File hello.py successfully updated.`,
+                    `<span style="color:#27c93f;">[REVIEWER]</span> Review completed. Structural AST dedent match confirms: SUCCESS.`
+                ];
+            } else if (cmd === '/security') {
+                outputLines = [
+                    `<span class="terminal-prompt">sAI guest@workspace ~ %</span> rm -rf scratch/old_files`,
+                    `<span style="color:#ff5f56;">[SECURITY WARNING]</span> Intercepted potentially harmful action!`,
+                    `  -> Gate rule matched: Delete/Force overrides`,
+                    `  -> Action held. Requesting user permission in popover...`
+                ];
+            } else if (cmd === '/theme') {
+                outputLines = [
+                    `<span class="terminal-prompt">sAI guest@workspace ~ %</span> /theme`,
+                    `Cycling dashboard theme... Applied VS-Dark syntax settings.`,
+                    `Meters grid colors updated dynamically.`
+                ];
+            }
+
+            // Append lines with dynamic delays to simulate typing
+            outputLines.forEach((line, index) => {
+                setTimeout(() => {
+                    const div = document.createElement('div');
+                    div.className = 'terminal-line';
+                    div.innerHTML = line;
+                    term.appendChild(div);
+                    term.scrollTop = term.scrollHeight;
+                }, index * 250);
+            });
+        }
+
+        // Surprise Interactive Security Scanner Simulator
+        function simulateSecurityScan() {
+            const cmd = document.getElementById("sec-sim-input").value.trim().toLowerCase();
+            const log = document.getElementById("sec-sim-log");
+            
+            if (!cmd) {
+                log.innerText = "Please enter a shell command.";
+                return;
+            }
+            
+            log.innerText = "Analyzing command syntax safety rules...\n";
+            
+            setTimeout(() => {
+                const securityChecks = [
+                    { prefix: "rm ", label: "🔴 CRITICAL SECURITY BLOCKED", msg: "Command matches dangerous removal rule 'rm '.\nSuspended thread execution immediately.\nDispatched: EventType.SECURITY_AUTH_NEEDED\nResult: HELD UNTIL USER EXPLICIT OVERRIDE." },
+                    { prefix: "git push", label: "🔴 CRITICAL SECURITY BLOCKED", msg: "Command matches remote push rule 'git push'.\nBlocked from default sandboxed runs.\nResult: FREEZES THREAD & PROMPTS CONFIRM GATE." },
+                    { prefix: "docker ", label: "🟡 EPHEMERAL ISOLATION WRAPPER", msg: "Command initiates container calls.\nDocker daemon checked: active.\nResult: RUNS SAFE ENCAPSULATED INSIDE DOCKER CONTAINER." },
+                    { prefix: "npm ", label: "🟢 PASS-THROUGH STAGED", msg: "Node package installation is allowed.\nDocker Sandbox checked: inactive.\nResult: EXECUTES ON HOST USER WORKSPACE DIRECTORY." },
+                    { prefix: "pip ", label: "🟢 PASS-THROUGH STAGED", msg: "Python package installer is allowed.\nResult: RUNS IMMEDIATELY." }
+                ];
+                
+                let matched = null;
+                for (let check of securityChecks) {
+                    if (cmd.startsWith(check.prefix)) {
+                        matched = check;
+                        break;
+                    }
+                }
+                
+                if (matched) {
+                    log.innerHTML = `<span style="color:${matched.label.startsWith('🔴') ? 'var(--accent-red)' : (matched.label.startsWith('🟡') ? 'var(--accent-revert)' : 'var(--accent-green)')}; font-weight:bold;">${matched.label}</span>\n\n` + matched.msg;
+                } else {
+                    log.innerHTML = `<span style="color:var(--accent-green); font-weight:bold;">🟢 PASS-THROUGH APPROVED</span>\n\nCommand "${cmd}" does not trigger any dangerous prefix rules.\nResult: EXECUTED IMMEDIATELY IN STANDARD WORKSPACE SHELL.`;
+                }
+            }, 600);
+        }
+
+        // Scroll to Top visibility logic
+        const btt = document.getElementById('btt-btn');
+        window.addEventListener('scroll', () => {
+            if (window.scrollY > 300) {
+                btt.classList.add('visible');
+            } else {
+                btt.classList.remove('visible');
+            }
+            
+            // Update active navbar links as we scroll
+            const sections = document.querySelectorAll('section');
+            const navLinks = document.querySelectorAll('.nav-link');
+            let current = '';
+            
+            sections.forEach(sec => {
+                const top = sec.offsetTop - 120;
+                if (window.scrollY >= top) {
+                    current = sec.getAttribute('id');
+                }
+            });
+            
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) {
+                    link.classList.add('active');
+                }
+            });
+        });
+
+        function scrollToTop() {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        }
+    </script>
+</body>
+</html>

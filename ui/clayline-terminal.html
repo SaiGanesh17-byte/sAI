@@ -1027,6 +1027,7 @@
                 <button class="clay-tab active" onclick="selectTab(this)">session one <span class="close-tab-btn" onclick="closeSessionTab(event, this)">×</span></button>
                 <button class="clay-tab" onclick="selectTab(this)">scratchpad</button>
                 <button class="clay-tab" onclick="selectTab(this)">diagnostics</button>
+                <button class="clay-tab" onclick="selectTab(this)">terminal</button>
                 <button class="clay-tab icon-tab" onclick="addNewTab()">+</button>
             </div>
             
@@ -1076,6 +1077,14 @@
                     <div class="sidebar-title">Workspace Explorer</div>
                     <input type="text" id="tree-search-input" class="clay-input-sub" style="font-size: 10.5px; padding: 5px 8px; margin-bottom: 6px;" placeholder="Filter files..." oninput="filterFileTree(this.value)">
                     
+                    <!-- Time-Travel Slider panel -->
+                    <div id="time-travel-panel" style="background: rgba(102, 252, 241, 0.03); border: 1px solid rgba(102, 252, 241, 0.1); border-radius: 12px; padding: 10px; margin-bottom: 8px; font-family:'Outfit', sans-serif; text-align: left;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+                            <span style="font-size: 9.5px; font-weight: bold; color: var(--accent-cyan); text-transform: uppercase;">🕰️ Time-Travel Rollback:</span>
+                            <span id="time-travel-label" style="font-size: 8.5px; opacity:0.6; font-family:monospace;">live state</span>
+                        </div>
+                        <input type="range" id="time-travel-slider" min="0" max="0" value="0" style="width:100%; cursor:pointer; accent-color:var(--accent-cyan);" onchange="handleTimeTravelScrub(this.value)">
+                    </div>
                     <!-- Pinned Context Dock -->
                     <div id="pinned-context-dock" style="display: none; background: rgba(0,0,0,0.03); border: 1px dashed rgba(0,0,0,0.06); border-radius: 12px; padding: 10px; margin-bottom: 8px; font-family:'Outfit', sans-serif; text-align: left;">
                         <div style="font-size: 9px; font-weight: bold; opacity: 0.6; text-transform: uppercase; margin-bottom: 6px;">📌 Pinned Context:</div>
@@ -1286,6 +1295,41 @@
                     </div>
                     <div id="diag-transactions-list" style="display: flex; flex-direction: column; gap: 6px; font-family:'Outfit', sans-serif; font-size: 11px;">
                         <div style="opacity: 0.5; font-size: 11px;">No transactions recorded for the active session.</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Terminal Shell Display -->
+            <section class="console-container" id="terminal-display" style="display: none; flex-direction: column; justify-content: space-between; overflow: hidden; min-height: 0; padding-top: 60px; position: relative;">
+                <div class="console-header" style="display:flex; justify-content:space-between; align-items:center; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.06); background: rgba(0,0,0,0.08);">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-size:14px;">🐳</span>
+                        <span style="font-size:12px; font-weight:bold; font-family:'Space Grotesk', sans-serif;">Interactive Sandbox Shell</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span id="term-status-badge" style="font-size:9.5px; opacity:0.6; font-family:monospace; background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px;">host shell</span>
+                        <button id="term-maximize-btn" class="clay-btn-sm" style="margin-top:0; padding:2px 8px; font-size:10px; background-color:rgba(102, 252, 241, 0.1); border-color:rgba(102, 252, 241, 0.2); color:var(--accent-cyan);" onclick="toggleTerminalMaximize()">Fullscreen</button>
+                    </div>
+                </div>
+                
+                <div id="term-output-lines" style="flex: 1; padding: 20px; font-family:'JetBrains Mono', monospace; font-size:12px; overflow-y:auto; color:#eceff4; text-align:left; background:#0b0c10;">
+                    <div style="opacity:0.5; margin-bottom:10px;">// Welcome to the sAI Sandbox Shell. Commands execute relative to your workspace.</div>
+                    <div style="opacity:0.5; margin-bottom:20px;">// If "Docker Sandbox" switch is enabled in the sidebar, executions are isolated.</div>
+                </div>
+
+                <div id="term-auto-fix-suggestion" style="display:none; padding:10px 20px; background:rgba(255,107,107,0.04); border-top:1px solid rgba(255,107,107,0.15); display:flex; flex-direction:column; gap:6px; text-align:left;">
+                    <div style="font-size:10px; font-weight:bold; color:#e7886f; text-transform:uppercase; font-family:'Outfit', sans-serif; display:flex; align-items:center; gap:6px;">
+                        <span>💡 sAI Auto-Fix suggestion:</span>
+                    </div>
+                    <div id="term-auto-fix-chips" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:2px;">
+                    </div>
+                </div>
+
+                <div class="console-input-area" style="padding: 14px 20px;">
+                    <div style="display:flex; align-items:center; gap:10px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:6px 12px;">
+                        <span style="font-family:'JetBrains Mono', monospace; font-size:12px; color:var(--accent-blue); font-weight:bold;">$</span>
+                        <input type="text" id="term-shell-input" placeholder="Run command in sandbox shell..." style="flex:1; background:transparent; border:none; outline:none; color:var(--text-main); font-family:'JetBrains Mono', monospace; font-size:12.5px;" onkeydown="handleTermInput(event)">
+                        <button class="clay-btn-sm" style="margin-top:0; padding:4px 10px; font-size:10px;" onclick="executeTermCommand()">Run</button>
                     </div>
                 </div>
             </section>
@@ -1611,10 +1655,16 @@
             const consoleDisplay = document.getElementById("console-display");
             const scratchpadDisplay = document.getElementById("scratchpad-display");
             const diagnosticsDisplay = document.getElementById("diagnostics-display");
+            const terminalDisplay = document.getElementById("terminal-display");
+            
+            if (tabName !== "terminal" && typeof isTerminalMaximized !== "undefined" && isTerminalMaximized) {
+                toggleTerminalMaximize();
+            }
             
             if (tabName === "scratchpad") {
                 consoleDisplay.style.display = "none";
                 diagnosticsDisplay.style.display = "none";
+                terminalDisplay.style.display = "none";
                 scratchpadDisplay.style.display = "flex";
                 if (monacoEditorInstance) {
                     const currentTheme = document.body.classList.contains("light-theme") ? "vs" : "vs-dark";
@@ -1624,12 +1674,20 @@
             } else if (tabName === "diagnostics") {
                 consoleDisplay.style.display = "none";
                 scratchpadDisplay.style.display = "none";
+                terminalDisplay.style.display = "none";
                 diagnosticsDisplay.style.display = "flex";
                 refreshDiagnosticsGraph();
                 refreshTransactionsList();
+            } else if (tabName === "terminal") {
+                consoleDisplay.style.display = "none";
+                scratchpadDisplay.style.display = "none";
+                diagnosticsDisplay.style.display = "none";
+                terminalDisplay.style.display = "flex";
+                checkTermSandboxState();
             } else {
                 scratchpadDisplay.style.display = "none";
                 diagnosticsDisplay.style.display = "none";
+                terminalDisplay.style.display = "none";
                 consoleDisplay.style.display = "flex";
                 
                 if (tabName.startsWith("session ")) {
@@ -2171,6 +2229,8 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
             }, 3000);
         }
 
+        let activeTransactionsList = [];
+
         function refreshTransactionsList() {
             const list = document.getElementById("diag-transactions-list");
             if (!list) return;
@@ -2182,29 +2242,46 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
             })
             .then(res => res.json())
             .then(data => {
-                if (data.status === "success" && data.transactions && data.transactions.length > 0) {
-                    list.innerHTML = "";
-                    data.transactions.forEach(tx => {
-                        const item = document.createElement("div");
-                        item.style.display = "flex";
-                        item.style.alignItems = "center";
-                        item.style.justifyContent = "space-between";
-                        item.style.padding = "6px 10px";
-                        item.style.background = "rgba(0,0,0,0.02)";
-                        item.style.borderRadius = "8px";
-                        item.style.marginBottom = "4px";
-                        
-                        const timeStr = new Date(tx.timestamp).toLocaleTimeString();
-                        const filename = tx.path.split("/").pop();
-                        
-                        item.innerHTML = `<div style="display:flex; flex-direction:column; gap:2px; text-align:left; max-width:75%;">
-                                            <span style="font-weight:600; color:var(--text-main); font-size:10.5px;">📝 Edit: ${filename}</span>
-                                            <span style="opacity:0.4; font-size:8.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${tx.path}</span>
-                                            <span style="opacity:0.5; font-size:8px;">${timeStr}</span>
-                                          </div>
-                                          <button class="clay-btn-sm" style="margin-top:0; padding:2px 8px; font-size:9.5px; background-color:rgba(231,136,111,0.12); color:#e7886f;" onclick="revertTransaction(${tx.id}, '${filename}')">Undo</button>`;
-                        list.appendChild(item);
-                    });
+                if (data.status === "success" && data.transactions) {
+                    activeTransactionsList = data.transactions;
+                    
+                    const slider = document.getElementById("time-travel-slider");
+                    const label = document.getElementById("time-travel-label");
+                    const len = data.transactions.length;
+                    
+                    if (slider && label) {
+                        slider.min = "0";
+                        slider.max = len.toString();
+                        slider.value = len.toString();
+                        label.innerText = "live state";
+                    }
+
+                    if (len > 0) {
+                        list.innerHTML = "";
+                        data.transactions.forEach(tx => {
+                            const item = document.createElement("div");
+                            item.style.display = "flex";
+                            item.style.alignItems = "center";
+                            item.style.justifyContent = "space-between";
+                            item.style.padding = "6px 10px";
+                            item.style.background = "rgba(0,0,0,0.02)";
+                            item.style.borderRadius = "8px";
+                            item.style.marginBottom = "4px";
+                            
+                            const timeStr = new Date(tx.timestamp).toLocaleTimeString();
+                            const filename = tx.path.split("/").pop();
+                            
+                            item.innerHTML = `<div style="display:flex; flex-direction:column; gap:2px; text-align:left; max-width:75%;">
+                                                <span style="font-weight:600; color:var(--text-main); font-size:10.5px;">📝 Edit: ${filename}</span>
+                                                <span style="opacity:0.4; font-size:8.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${tx.path}</span>
+                                                <span style="opacity:0.5; font-size:8px;">${timeStr}</span>
+                                              </div>
+                                              <button class="clay-btn-sm" style="margin-top:0; padding:2px 8px; font-size:9.5px; background-color:rgba(231,136,111,0.12); color:#e7886f;" onclick="revertTransaction(${tx.id}, '${filename}')">Undo</button>`;
+                            list.appendChild(item);
+                        });
+                    } else {
+                        list.innerHTML = "<div style='opacity: 0.5; font-size: 11px; text-align:left;'>No transactions recorded for the active session.</div>";
+                    }
                 } else {
                     list.innerHTML = "<div style='opacity: 0.5; font-size: 11px; text-align:left;'>No transactions recorded for the active session.</div>";
                 }
@@ -4257,6 +4334,235 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
                 document.getElementById("inspector-confidence").innerText = "---";
                 document.getElementById("inspector-reasoning").innerText = "No active trace in the current session.";
                 targetOutput.innerText = `The agent node '${role.toUpperCase()}' has not executed any subtasks in the active session context yet. Run a prompt to trigger agent loops.`;
+            }
+        }
+
+        function checkTermSandboxState() {
+            const isDocker = document.getElementById("sidebar-docker-mode").checked;
+            const badge = document.getElementById("term-status-badge");
+            if (badge) {
+                if (isDocker) {
+                    badge.innerText = "docker alpine container";
+                    badge.style.color = "var(--accent-cyan)";
+                    badge.style.background = "rgba(102, 252, 241, 0.1)";
+                } else {
+                    badge.innerText = "host shell";
+                    badge.style.color = "var(--text-main)";
+                    badge.style.background = "rgba(255, 255, 255, 0.05)";
+                }
+            }
+        }
+
+        function handleTermInput(e) {
+            if (e.key === "Enter") {
+                executeTermCommand();
+            }
+        }
+
+        function executeTermCommand() {
+            const input = document.getElementById("term-shell-input");
+            const outputArea = document.getElementById("term-output-lines");
+            const suggestionPanel = document.getElementById("term-auto-fix-suggestion");
+            
+            if (!input || !input.value.trim()) return;
+            const cmd = input.value.trim();
+            input.value = "";
+            
+            const userLine = document.createElement("div");
+            userLine.style.marginTop = "14px";
+            userLine.style.marginBottom = "6px";
+            userLine.innerHTML = `<span style="color:var(--accent-blue); font-weight:bold;">$</span> <span style="font-weight:600;">${cmd}</span>`;
+            outputArea.appendChild(userLine);
+            outputArea.scrollTop = outputArea.scrollHeight;
+            
+            if (suggestionPanel) suggestionPanel.style.display = "none";
+            
+            fetch("/api/terminal/execute", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ command: cmd })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === "success") {
+                    const resultLine = document.createElement("pre");
+                    resultLine.style.whiteSpace = "pre-wrap";
+                    resultLine.style.fontFamily = "inherit";
+                    resultLine.style.fontSize = "11px";
+                    resultLine.style.margin = "6px 0";
+                    resultLine.style.opacity = "0.9";
+                    
+                    if (data.exit_code !== 0) {
+                        resultLine.style.color = "#ff6b6b";
+                        resultLine.innerText = `[Exit Code ${data.exit_code}]\n` + data.output;
+                        parseAutoFixSuggestions(cmd, data.output);
+                    } else {
+                        resultLine.innerText = data.output || "(command executed with no output)";
+                    }
+                    
+                    outputArea.appendChild(resultLine);
+                    outputArea.scrollTop = outputArea.scrollHeight;
+                    
+                    loadFileTree();
+                    refreshGitStatus();
+                } else {
+                    const errLine = document.createElement("div");
+                    errLine.style.color = "#ff6b6b";
+                    errLine.innerText = "Execution failed: " + data.message;
+                    outputArea.appendChild(errLine);
+                    outputArea.scrollTop = outputArea.scrollHeight;
+                }
+            })
+            .catch(err => {
+                const errLine = document.createElement("div");
+                errLine.style.color = "#ff6b6b";
+                errLine.innerText = "Network execution error: " + err.message;
+                outputArea.appendChild(errLine);
+                outputArea.scrollTop = outputArea.scrollHeight;
+            });
+        }
+
+        function parseAutoFixSuggestions(command, output) {
+            const chipsContainer = document.getElementById("term-auto-fix-chips");
+            const suggestionPanel = document.getElementById("term-auto-fix-suggestion");
+            if (!chipsContainer || !suggestionPanel) return;
+            
+            chipsContainer.innerHTML = "";
+            let suggestions = [];
+            
+            if (output.includes("ModuleNotFoundError: No module named") || output.includes("ImportError:")) {
+                const match = output.match(/(?:ModuleNotFoundError: No module named|ImportError:)\s+'?([a-zA-Z0-9_-]+)'?/);
+                const pkg = match ? match[1] : null;
+                if (pkg) {
+                    suggestions.push({
+                        label: `Install ${pkg} via pip`,
+                        action: () => {
+                            document.getElementById("term-shell-input").value = `pip install ${pkg}`;
+                            executeTermCommand();
+                        }
+                    });
+                }
+            }
+            
+            if (output.includes("SyntaxError:") || output.includes("IndentationError:")) {
+                suggestions.push({
+                    label: "🤖 Ask sAI to diagnose file syntax",
+                    action: () => {
+                        const consoleBtn = Array.from(document.querySelectorAll(".clay-tab")).find(b => b.innerText.toLowerCase().startsWith("session"));
+                        if (consoleBtn) selectTab(consoleBtn);
+                        
+                        const consoleInput = document.getElementById("cmd-input");
+                        if (consoleInput) {
+                            consoleInput.value = `Diagnose and fix syntax/indentation errors in my workspace files. Output logs state: ${output.split('\n')[0]}`;
+                            consoleInput.focus();
+                        }
+                    }
+                });
+            }
+            
+            if (command.startsWith("pytest") || command.includes("test")) {
+                suggestions.push({
+                    label: "🤖 Ask sAI to fix test failures",
+                    action: () => {
+                        const consoleBtn = Array.from(document.querySelectorAll(".clay-tab")).find(b => b.innerText.toLowerCase().startsWith("session"));
+                        if (consoleBtn) selectTab(consoleBtn);
+                        
+                        const consoleInput = document.getElementById("cmd-input");
+                        if (consoleInput) {
+                            consoleInput.value = `The tests failed running command "${command}". Diagnose this failure and repair the codebase: ${output.slice(0, 300)}`;
+                            consoleInput.focus();
+                        }
+                    }
+                });
+            }
+            
+            if (activeTransactionsList.length > 0) {
+                const latestTx = activeTransactionsList[0];
+                const filename = latestTx.path.split("/").pop();
+                suggestions.push({
+                    label: `⏪ Revert last edit on ${filename}`,
+                    action: () => {
+                        revertTransaction(latestTx.id, filename);
+                    }
+                });
+            }
+            
+            if (suggestions.length > 0) {
+                suggestions.forEach(s => {
+                    const chip = document.createElement("button");
+                    chip.className = "clay-chip";
+                    chip.style.margin = "0";
+                    chip.style.padding = "4px 10px";
+                    chip.style.fontSize = "10px";
+                    chip.style.background = "rgba(231,136,111,0.1)";
+                    chip.style.color = "#e7886f";
+                    chip.style.border = "1px solid rgba(231,136,111,0.2)";
+                    chip.innerText = s.label;
+                    chip.onclick = s.action;
+                    chipsContainer.appendChild(chip);
+                });
+                suggestionPanel.style.display = "flex";
+            }
+        }
+
+        function handleTimeTravelScrub(val) {
+            val = parseInt(val);
+            const len = activeTransactionsList.length;
+            const label = document.getElementById("time-travel-label");
+            
+            if (val === len) {
+                if (label) label.innerText = "live state";
+                return;
+            }
+            
+            const targetTx = activeTransactionsList[len - 1 - val];
+            if (!targetTx) return;
+            
+            const filename = targetTx.path.split("/").pop();
+            if (!confirm(`Rollback workspace files to state at transaction [${filename}]? This will undo subsequent edits.`)) {
+                document.getElementById("time-travel-slider").value = len;
+                return;
+            }
+            
+            if (label) label.innerText = `tx ID: ${targetTx.id}`;
+            
+            fetch("/api/workspace/revert_to", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ session_id: activeSession, transaction_id: targetTx.id })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === "success") {
+                    printCard("Time Travel Revert", `Workspace state rolled back to transaction snapshot ID ${targetTx.id} successfully.`);
+                    refreshTransactionsList();
+                    loadFileTree();
+                    refreshGitStatus();
+                } else {
+                    alert("Time travel rollback failed: " + data.message);
+                }
+            })
+            .catch(err => {
+                alert("Error during time travel: " + err.message);
+            });
+        let isTerminalMaximized = false;
+        function toggleTerminalMaximize() {
+            const leftSidebar = document.querySelector("aside.sidebar");
+            const inspector = document.getElementById("inspector-display");
+            const memory = document.getElementById("memory-display");
+            const btn = document.getElementById("term-maximize-btn");
+            
+            isTerminalMaximized = !isTerminalMaximized;
+            if (isTerminalMaximized) {
+                if (leftSidebar) leftSidebar.style.display = "none";
+                if (inspector) inspector.style.display = "none";
+                if (memory) memory.style.display = "none";
+                if (btn) btn.innerText = "Exit Fullscreen";
+            } else {
+                if (leftSidebar) leftSidebar.style.display = "flex";
+                if (inspector) inspector.style.display = "flex";
+                if (memory) memory.style.display = "flex";
+                if (btn) btn.innerText = "Fullscreen";
             }
         }
 

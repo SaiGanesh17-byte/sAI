@@ -140,6 +140,44 @@ def revert_transaction(transaction_id: int) -> tuple:
     except Exception as e:
         return False, str(e)
 
+def revert_to_transaction_snapshot(session_id: str, target_tx_id: int) -> tuple:
+    conn = sqlite3.connect(str(TRANSACTIONS_DB))
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, path, before_content FROM file_transactions WHERE session_id = ? AND id >= ? ORDER BY id DESC",
+        (session_id, target_tx_id)
+    )
+    rows = cursor.fetchall()
+    
+    if not rows:
+        conn.close()
+        return False, "No transactions found to revert."
+        
+    reverted_paths = []
+    errors = []
+    for tx_id, path_str, before_content in rows:
+        try:
+            target_path = Path(path_str)
+            if before_content is None:
+                if target_path.exists():
+                    target_path.unlink()
+            else:
+                target_path.write_text(before_content, encoding="utf-8")
+            reverted_paths.append(path_str)
+        except Exception as e:
+            errors.append(f"Failed to revert {path_str}: {e}")
+            
+    cursor.execute(
+        "DELETE FROM file_transactions WHERE session_id = ? AND id >= ?",
+        (session_id, target_tx_id)
+    )
+    conn.commit()
+    conn.close()
+    
+    if errors:
+        return False, "; ".join(errors)
+    return True, f"Reverted {len(reverted_paths)} edits."
+
 def approve_command(command: str):
     with COMMANDS_LOCK:
         APPROVED_COMMANDS.add(command.strip())
