@@ -1500,6 +1500,7 @@
         
         let currentThemeIndex = 0;
         const themes = ["sand", "mint", "lavender", "dark"];
+        let isTerminalMaximized = false;
 
         const techStackBoilerplates = {
             python_fastapi: [
@@ -4545,7 +4546,6 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
             .catch(err => {
                 alert("Error during time travel: " + err.message);
             });
-        let isTerminalMaximized = false;
         function toggleTerminalMaximize() {
             const leftSidebar = document.querySelector("aside.sidebar");
             const inspector = document.getElementById("inspector-display");
