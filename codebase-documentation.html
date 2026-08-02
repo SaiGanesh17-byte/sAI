@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>sAI Codebase Developer Documentation</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    
+    <!-- Prism.js Syntax Highlighting CDN -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" id="prism-theme" />
+    
+    <!-- Mermaid.js Architecture Diagram CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+    </script>
+
+    <style>
+        :root {
+            --bg-base: #090e16;
+            --bg-sidebar: #0f172a;
+            --bg-surface: #1e293b;
+            --bg-code: #0b0c10;
+            --accent-cyan: #38bdf8;
+            --accent-cyan-hover: #0ea5e9;
+            --text-main: #94a3b8;
+            --text-bright: #f8fafc;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --shadow-glow: rgba(56, 189, 248, 0.15);
+        }
+
+        .light-mode {
+            --bg-base: #f8fafc;
+            --bg-sidebar: #f1f5f9;
+            --bg-surface: #ffffff;
+            --bg-code: #f1f5f9;
+            --accent-cyan: #0284c7;
+            --accent-cyan-hover: #0369a1;
+            --text-main: #475569;
+            --text-bright: #0f172a;
+            --border-color: rgba(0, 0, 0, 0.08);
+            --shadow-glow: rgba(2, 132, 199, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+            min-height: 100vh;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        /* Two Column Layout */
+        .sidebar {
+            width: 280px;
+            background-color: var(--bg-sidebar);
+            border-right: 1px solid var(--border-color);
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            z-index: 10;
+            transition: background 0.3s;
+        }
+
+        .main-canvas {
+            margin-left: 280px;
+            flex: 1;
+            padding: 40px 5%;
+            overflow-y: auto;
+        }
+
+        /* Header logo */
+        .sidebar-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+
+        .logo-icon {
+            font-size: 24px;
+            text-shadow: 0 0 10px var(--accent-cyan);
+        }
+
+        .logo-text {
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 20px;
+            color: var(--text-bright);
+        }
+
+        .logo-text span {
+            color: var(--accent-cyan);
+        }
+
+        /* Sidebar search and menu */
+        .search-input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: var(--text-bright);
+            font-family: inherit;
+            font-size: 13.5px;
+            margin-bottom: 24px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .search-input:focus {
+            border-color: var(--accent-cyan);
+        }
+
+        .menu-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .menu-link {
+            display: block;
+            color: var(--text-main);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 8px 12px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .menu-link:hover, .menu-link.active {
+            color: var(--text-bright);
+            background: rgba(56, 189, 248, 0.08);
+            border-left: 3px solid var(--accent-cyan);
+        }
+
+        /* Mode toggle at bottom of sidebar */
+        .sidebar-footer {
+            margin-top: auto;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .mode-toggle-label {
+            font-size: 12.5px;
+            font-weight: 600;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 22px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #cbd5e1;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--accent-cyan);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(22px);
+        }
+
+        /* Main Content elements */
+        section {
+            padding: 40px 0;
+            border-bottom: 1px solid var(--border-color);
+            scroll-margin-top: 40px;
+        }
+
+        h1, h2, h3, h4 {
+            font-family: 'Space Grotesk', sans-serif;
+            color: var(--text-bright);
+            margin-bottom: 16px;
+        }
+
+        h1 { font-size: 38px; border-bottom: 2px solid var(--accent-cyan); padding-bottom: 12px; }
+        h2 { font-size: 28px; margin-top: 20px; }
+        h3 { font-size: 20px; margin-top: 14px; }
+
+        p {
+            font-size: 15px;
+            margin-bottom: 18px;
+            opacity: 0.9;
+        }
+
+        /* Code block container */
+        .code-container {
+            position: relative;
+            background-color: var(--bg-code);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 24px;
+        }
+
+        .code-header {
+            background: rgba(255,255,255,0.02);
+            border-bottom: 1px solid var(--border-color);
+            padding: 8px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            opacity: 0.7;
+        }
+
+        .copy-btn {
+            background: rgba(56, 189, 248, 0.1);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            padding: 2px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .copy-btn:hover {
+            background: var(--accent-cyan);
+            color: var(--bg-base);
+        }
+
+        pre {
+            margin: 0 !important;
+            padding: 16px !important;
+            border-radius: 0 !important;
+            background: transparent !important;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace !important;
+            font-size: 13px !important;
+        }
+
+        /* Interactive File Tree */
+        .tree {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            text-align: left;
+            user-select: none;
+            margin-bottom: 24px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            border-radius: 12px;
+        }
+
+        .tree-node {
+            margin-left: 16px;
+            position: relative;
+        }
+
+        .tree-node-content {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .tree-node-content:hover {
+            background: rgba(56, 189, 248, 0.05);
+        }
+
+        .tree-node-folder::before {
+            content: "▶";
+            font-size: 9px;
+            display: inline-block;
+            transition: transform 0.2s;
+            margin-right: 4px;
+        }
+
+        .tree-node-folder.expanded::before {
+            transform: rotate(90deg);
+        }
+
+        .tree-children {
+            display: none;
+        }
+
+        .tree-node-folder.expanded + .tree-children {
+            display: block;
+        }
+
+        .tree-icon {
+            font-size: 14px;
+        }
+
+        /* Tech Spec table */
+        .spec-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+
+        .spec-table th {
+            background: rgba(56, 189, 248, 0.05);
+            border-bottom: 2px solid var(--border-color);
+            color: var(--text-bright);
+            padding: 12px;
+            font-weight: bold;
+        }
+
+        .spec-table td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            opacity: 0.9;
+        }
+
+        /* Mermaid Box */
+        .mermaid-container {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 24px;
+            display: flex;
+            justify-content: center;
+            overflow-x: auto;
+        }
+
+        /* Alert notifications */
+        .alert-box {
+            background: rgba(56, 189, 248, 0.05);
+            border-left: 4px solid var(--accent-cyan);
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 24px;
+        }
+
+        .alert-title {
+            font-weight: bold;
+            color: var(--text-bright);
+            margin-bottom: 4px;
+            font-size: 14.5px;
+        }
+    </style>
+</head>
+<body class="">
+
+    <!-- Left Sidebar Navigation -->
+    <aside class="sidebar">
+        <div class="sidebar-logo">
+            <span class="logo-icon">🚀</span>
+            <span class="logo-text">s<span>AI</span> Docs</span>
+        </div>
+        
+        <input type="text" class="search-input" id="sidebar-search" placeholder="Search sections..." oninput="filterMenu(this.value)">
+        
+        <ul class="menu-list" id="sidebar-menu">
+            <li><a href="#overview" class="menu-link active" onclick="activateLink(this)">Project Overview</a></li>
+            <li><a href="#architecture" class="menu-link" onclick="activateLink(this)">Architecture Design</a></li>
+            <li><a href="#directory" class="menu-link" onclick="activateLink(this)">Folder Structure</a></li>
+            <li><a href="#setup" class="menu-link" onclick="activateLink(this)">Setup & Execution</a></li>
+            <li><a href="#orchestrator" class="menu-link" onclick="activateLink(this)">Orchestrator Engine</a></li>
+            <li><a href="#security" class="menu-link" onclick="activateLink(this)">Security & Reverts</a></li>
+            <li><a href="#runtime" class="menu-link" onclick="activateLink(this)">LLM Runtime Pipeline</a></li>
+            <li><a href="#filesystem" class="menu-link" onclick="activateLink(this)">Filesystem Toolset</a></li>
+            <li><a href="#terminal" class="menu-link" onclick="activateLink(this)">Terminal Sandbox Tool</a></li>
+        </ul>
+
+        <div class="sidebar-footer">
+            <span class="mode-toggle-label">Dark Theme</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="theme-toggler" onchange="toggleTheme(this.checked)" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+    </aside>
+
+    <!-- Right Main Content Canvas -->
+    <main class="main-canvas">
+
+        <!-- Section: Overview -->
+        <section id="overview">
+            <h1>sAI Project Overview</h1>
+            <p>
+                <strong>sAI</strong> is an asynchronous, event-driven multi-agent AI operating system. The system coordinates specialized agent roles—Planner, Architect, Coder, and Reviewer—collaborating over a centralized event bus to analyze, modify, and verify your codebase safety sandboxes.
+            </p>
+            <div class="alert-box">
+                <div class="alert-title">💡 Core Architecture Principles</div>
+                <p style="margin:0; font-size:13.5px; opacity:0.85;">
+                    The design prioritizes host isolation (Docker subprocess sandboxing), deterministic rollbacks (SQLite-backed transaction snapshots), JIT search indexing, and a thread-safe unified CLI gateway.
+                </p>
+            </div>
+            <h3>Primary Dependencies & Tech Stack</h3>
+            <table class="spec-table">
+                <thead>
+                    <tr>
+                        <th>Tier</th>
+                        <th>Technology</th>
+                        <th>Purpose</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Core Engine</strong></td>
+                        <td>Python 3.8+</td>
+                        <td>Multi-agent loop, subprocess runners, context builders</td>
+                    </tr>
+                    <tr>
+                        <td><strong>UI Server</strong></td>
+                        <td>FastAPI / HTTP Server</td>
+                        <td>Web dashboard integration, event stream notifications</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Visual Dashboard</strong></td>
+                        <td>Vanilla CSS / Monaco Editor</td>
+                        <td>Neumorphic user workspace, file tree explorer, diff previews</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Terminal TUI</strong></td>
+                        <td>Textual library</td>
+                        <td>Terminal-based interactive split console interface</td>
+                    </tr>
+                    <tr>
+                        <td><strong>History Log</strong></td>
+                        <td>SQLite</td>
+                        <td>Workspace transaction storage (.sai/transactions.db)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Section: Architecture -->
+        <section id="architecture">
+            <h2>System Architecture Design</h2>
+            <p>
+                The Central Event Bus mediates between interfaces, agents, and filesystem sandboxes:
+            </p>
+            
+            <div class="mermaid-container">
+                <div class="mermaid">
+                    graph TD
+                        User[User Client / CLI / TUI] -->|1. Submit Goal| EventBus(Central Event Bus)
+                        EventBus -->|2. Dispatch Task| Orchestrator{Orchestrator Engine}
+                        Orchestrator -->|3. Route Message| Planner[Planner Agent]
+                        Planner -->|4. Checklist Plan| EventBus
+                        Orchestrator -->|5. Coordinate Task| Coder[Coder Agent]
+                        Coder -->|6. Execute Sandbox tools| Sandbox{Runtime Sandbox}
+                        Sandbox -->|7. snapshot| SQLite[(SQLite Transactions.db)]
+                        Sandbox -->|8. Mutate| Filesystem[(Local Workspace Files)]
+                        Orchestrator -->|9. Verify Edits| Reviewer[Reviewer Agent]
+                        Reviewer -->|10. Check AST / Lints| EventBus
+                </div>
+            </div>
+        </section>
+
+        <!-- Section: Directory Structure -->
+        <section id="directory">
+            <h2>Annotated Directory Structure</h2>
+            <p>Click on any folder in the tree below to expand or collapse it and learn about its component responsibility:</p>
+            
+            <div class="tree">
+                <!-- Root -->
+                <div class="tree-node">
+                    <div class="tree-node-content tree-node-folder expanded" onclick="toggleFolder(this)">
+                        <span class="tree-icon">📂</span> <span>sAI/</span>
+                    </div>
+                    <div class="tree-children">
+                        <!-- agents/ -->
+                        <div class="tree-node">
+                            <div class="tree-node-content tree-node-folder" onclick="toggleFolder(this)">
+                                <span class="tree-icon">📂</span> <span>agents/</span>
+                            </div>
+                            <div class="tree-children">
+                                <div class="tree-node-content"><span class="tree-icon">📄</span> <span>registry.py - Registers Planner, Architect, Coder, Reviewer</span></div>
+                                <div class="tree-node-content"><span class="tree-icon">📄</span> <span>base.py - Base abstract agent configurations</span></div>
+                            </div>
+                        </div>
+                        <!-- app/ -->
+                        <div class="tree-node">
+                            <div class="tree-node-content tree-node-folder" onclick="toggleFolder(this)">
+                                <span class="tree-icon">📂</span> <span>app/</span>
+                            </div>
+                            <div class="tree-children">
+                                <div class="tree-node-content"><span class="tree-icon">📄</span> <span>main.py - Main HTTP Web UI Server & CLI Entry Point</span></div>
+                            </div>
+                        </div>
+                        <!-- core/ -->
+                        <div class="tree-node">
+                            <div class="tree-node-content tree-node-folder" onclick="toggleFolder(this)">
+                                <span class="tree-icon">📂</span> <span>core/</span>
+                            </div>
+                            <div class="tree-children">
+                                <div class="tree-node-content"><span class="tree-icon">📄</span> <span>orchestrator.py - Coordinates the ReAct loops</span></div>
+                                <div class="tree-node-content"><span class="tree-icon">📄</span> <span>security.py - Transaction logs, rollback checks</span></div>
+                                <div class="tree-node-content"><span class="tree-icon">📄</span> <span>settings.py - User global preferences cache</span></div>
+                            </div>
+                        </div>
+                        <!-- tools/ -->
+                        <div class="tree-node">
+                            <div class="tree-node-content tree-node-folder" onclick="toggleFolder(this)">
+                                <span class="tree-icon">📂</span> <span>tools/</span>
+                            </div>
+                            <div class="tree-children">
+                                <div class="tree-node-content"><span class="tree-icon">📄</span> <span>filesystem.py - Reads, writes, patches files</span></div>
+                                <div class="tree-node-content"><span class="tree-icon">📄</span> <span>terminal.py - Subprocesses runner shell with Docker wrappers</span></div>
+                            </div>
+                        </div>
+                        <!-- ui/ -->
+                        <div class="tree-node">
+                            <div class="tree-node-content tree-node-folder" onclick="toggleFolder(this)">
+                                <span class="tree-icon">📂</span> <span>ui/</span>
+                            </div>
+                            <div class="tree-children">
+                                <div class="tree-node-content"><span class="tree-icon">📄</span> <span>clayline-terminal.html - Dashboard layout rendering code</span></div>
+                                <div class="tree-node-content"><span class="tree-icon">📄</span> <span>terminal.py - Interactive Textual TUI code</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section: Setup -->
+        <section id="setup">
+            <h2>Getting Started & Local Setup</h2>
+            <p>Setup prerequisites, required environment variables, and execution commands compiled from repository configuration files:</p>
+            
+            <h3>1. Setup virtual environment</h3>
+            <div class="code-container">
+                <div class="code-header"><span>BASH</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+                <pre><code class="language-bash">python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt</code></pre>
+            </div>
+
+            <h3>2. Environment Variables Configuration (`.env`)</h3>
+            <p>Configure model access credentials inside the root <code>.env</code> file:</p>
+            <div class="code-container">
+                <div class="code-header"><span>ENV</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+                <pre><code class="language-ini"># LLM API configuration variables
+OPENAI_API_KEY=your-openai-api-key-here
+NVIDIA_API_KEY=your-nvidia-api-key-here
+OLLAMA_HOST=http://localhost:11434</code></pre>
+            </div>
+
+            <h3>3. Running sAI (Three Gateway Modes)</h3>
+            <div class="code-container">
+                <div class="code-header"><span>BASH</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+                <pre><code class="language-bash"># Start Visual Web Dashboard (Recommended)
+python3 app/main.py --web
+
+# Start Terminal Textual TUI
+python3 app/main.py --tui
+
+# Start conversational prompt CLI
+python3 app/main.py --cli
+
+# Run a one-shot agent task
+python3 app/main.py --run "fix bugs in core/security.py"</code></pre>
+            </div>
+        </section>
+
+        <!-- Section: Orchestrator Walkthrough -->
+        <section id="orchestrator">
+            <h2>Deep-Dive: Orchestrator Engine</h2>
+            <p>
+                The <code>Orchestrator</code> in <code>core/orchestrator.py</code> serves as the central manager of the ReAct loops, coordinating task states, scheduled DAG actions, and tool calls.
+            </p>
+            
+            <h3>API Signature Walkthrough</h3>
+            <table class="spec-table">
+                <thead>
+                    <tr>
+                        <th>Method</th>
+                        <th>Parameters</th>
+                        <th>Return Type</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>run(task)</code></td>
+                        <td><code>task: Task</code></td>
+                        <td><code>None</code></td>
+                        <td>Starts the agent loop, schedules subtasks, and sequentially feeds goals to agents.</td>
+                    </tr>
+                    <tr>
+                        <td><code>_init_kernel()</code></td>
+                        <td><code>None</code></td>
+                        <td><code>None</code></td>
+                        <td>Registers providers (OpenAI, Nvidia, Ollama) and registers sandbox filesystem tools.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>Code Highlight: ReAct Agent Loop</h3>
+            <div class="code-container">
+                <div class="code-header"><span>core/orchestrator.py</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+                <pre><code class="language-python"># Coordinates the agent execution loop and release locks
+while current_agent_name and turns < max_turns:
+    turns += 1
+    agent = next((a for a in self.agents if a.name == current_agent_name), None)
+    if not agent:
+        break
+
+    event_bus.publish(EventType.AGENT_STARTED, {"agent": agent.name, "turn": turns})
+    
+    # Run the ReAct agent
+    message = agent.run(task.context)
+    response = message.metadata.get("response")
+
+    # If actions are proposed, pass them to execution engine
+    if response and response.actions:
+        for action in response.actions:
+            tool_result = self.execution_engine.execute(action)</code></pre>
+            </div>
+        </section>
+
+        <!-- Section: Security Walkthrough -->
+        <section id="security">
+            <h2>Deep-Dive: Security & Rollbacks</h2>
+            <p>
+                The <code>core/security.py</code> module manages file state logs, single-use execution whitelists, and time-travel rollback sliders inside <code>transactions.db</code>.
+            </p>
+
+            <h3>API Signature Walkthrough</h3>
+            <table class="spec-table">
+                <thead>
+                    <tr>
+                        <th>Method</th>
+                        <th>Parameters</th>
+                        <th>Return Type</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>save_transaction_snapshot(session_id, path_str)</code></td>
+                        <td><code>session_id: str, path_str: str</code></td>
+                        <td><code>None</code></td>
+                        <td>Logs a file's state (before edit) to the transactions database.</td>
+                    </tr>
+                    <tr>
+                        <td><code>revert_transaction(transaction_id)</code></td>
+                        <td><code>transaction_id: int</code></td>
+                        <td><code>tuple (bool, str)</code></td>
+                        <td>Restores a single file back to its pre-patch state.</td>
+                    </tr>
+                    <tr>
+                        <td><code>revert_to_transaction_snapshot(session_id, target_tx_id)</code></td>
+                        <td><code>session_id: str, target_tx_id: int</code></td>
+                        <td><code>tuple (bool, str)</code></td>
+                        <td>Performs batch rollback of all edits chronologically back to a specific moment.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>Code Highlight: Time-Travel Rollback Algorithm</h3>
+            <div class="code-container">
+                <div class="code-header"><span>core/security.py</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+                <pre><code class="language-python">def revert_to_transaction_snapshot(session_id: str, target_tx_id: int) -> tuple:
+    conn = sqlite3.connect(str(TRANSACTIONS_DB))
+    cursor = conn.cursor()
+    
+    # Retrieve all transaction edits from target_tx_id onwards in reverse chronological order
+    cursor.execute(
+        "SELECT id, path, before_content FROM file_transactions WHERE session_id = ? AND id >= ? ORDER BY id DESC",
+        (session_id, target_tx_id)
+    )
+    rows = cursor.fetchall()
+    
+    reverted_paths = []
+    for tx_id, path_str, before_content in rows:
+        target_path = Path(path_str)
+        if before_content is None:
+            # File was created; clean it up on revert
+            if target_path.exists():
+                target_path.unlink()
+        else:
+            # Re-write the pre-patch content snapshot
+            target_path.write_text(before_content, encoding="utf-8")
+        reverted_paths.append(path_str)
+        
+    cursor.execute("DELETE FROM file_transactions WHERE session_id = ? AND id >= ?", (session_id, target_tx_id))
+    conn.commit()
+    conn.close()
+    return True, f"Reverted {len(reverted_paths)} edits."</code></pre>
+            </div>
+        </section>
+
+        <!-- Section: Runtime Walkthrough -->
+        <section id="runtime">
+            <h2>Deep-Dive: LLM Runtime Pipeline</h2>
+            <p>
+                Coordinates API queries, token trackers, model routing configurations, and exponential waits inside <code>llm/runtime.py</code>.
+            </p>
+
+            <h3>Code Highlight: Retry-Exponential Query Interface</h3>
+            <div class="code-container">
+                <div class="code-header"><span>llm/runtime.py</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+                <pre><code class="language-python">@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    reraise=True
+)
+def query(self, prompt: str, task_kind: str, temperature: float = 0.2) -> str:
+    # Router picks model based on task type (e.g. Coder -> o1-mini, Reviewer -> gpt-4o)
+    provider_name, model_name = ModelRouter.route(task_kind)
+    
+    event_bus.publish(EventType.LLM_REQUEST, {"model": model_name, "provider": provider_name})
+    provider = kernel.get_provider(provider_name)
+    
+    response_content = provider.complete(messages, model=model_name, temperature=temperature)
+    return response_content</code></pre>
+            </div>
+        </section>
+
+        <!-- Section: Filesystem Walkthrough -->
+        <section id="filesystem">
+            <h2>Deep-Dive: Filesystem Toolset</h2>
+            <p>
+                The filesystem tools in <code>tools/filesystem.py</code> safeguard the disk, verifying boundaries before mutations and logging transaction snapshots.
+            </p>
+
+            <h3>Code Highlight: Sandboxed Write Tool</h3>
+            <div class="code-container">
+                <div class="code-header"><span>tools/filesystem.py</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+                <pre><code class="language-python">class WriteFileTool(BaseTool):
+    def execute(self, args: Dict[str, Any]) -> str:
+        path_str = args.get("path")
+        content = args.get("content", "")
+        
+        target_path = Path(path_str)
+        if not target_path.is_absolute():
+            target_path = get_current_workspace() / target_path
+            
+        # Sandbox boundary security check
+        if not validate_path(target_path):
+            return "Error: Path is outside workspace boundaries."
+            
+        # Capture rollback snapshot prior to edit
+        from core.security import save_transaction_snapshot
+        save_transaction_snapshot(CURRENT_SESSION_ID, str(target_path))
+        
+        target_path.write_text(content, encoding="utf-8")
+        return "File written successfully."</code></pre>
+            </div>
+        </section>
+
+        <!-- Section: Terminal Walkthrough -->
+        <section id="terminal">
+            <h2>Deep-Dive: Terminal Sandbox Tool</h2>
+            <p>
+                Standard shell execution engine inside <code>tools/terminal.py</code> wrapping subprocess operations with ephemeral Docker containers to shield host.
+            </p>
+
+            <h3>Code Highlight: Docker Isolation Interceptor</h3>
+            <div class="code-container">
+                <div class="code-header"><span>tools/terminal.py</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+                <pre><code class="language-python">class TerminalTool(BaseTool):
+    def execute(self, args: Dict[str, Any]) -> str:
+        cmd = args.get("command", "")
+        settings = load_settings()
+        
+        # Intercept and wrap command inside Docker Alpine container if sandbox is ON
+        if settings.get("docker_sandbox", False):
+            cwd = get_current_workspace()
+            run_cmd = f'docker run --rm -v "{cwd}":/workspace -w /workspace alpine sh -c {repr(cmd)}'
+        else:
+            run_cmd = cmd
+            
+        result = subprocess.run(
+            run_cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=15.0
+        )
+        return result.stdout if result.returncode == 0 else result.stderr</code></pre>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Prism.js Code highlighting CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+
+    <script>
+        // Toggle folder expansion/collapse in the visual directory tree
+        function toggleFolder(element) {
+            element.classList.toggle("expanded");
+        }
+
+        // Active link highlight toggles
+        function activateLink(element) {
+            document.querySelectorAll(".menu-link").forEach(lnk => lnk.classList.remove("active"));
+            element.classList.add("active");
+        }
+
+        // Filter sidebar links based on search input query
+        function filterMenu(query) {
+            query = query.toLowerCase().trim();
+            const links = document.querySelectorAll("#sidebar-menu li");
+            
+            links.forEach(li => {
+                const text = li.textContent.toLowerCase();
+                if (text.includes(query)) {
+                    li.style.display = "block";
+                } else {
+                    li.style.display = "none";
+                }
+            });
+        }
+
+        // Copy Code utility
+        function copyCode(btn) {
+            const pre = btn.parentElement.nextElementSibling;
+            const code = pre.querySelector("code");
+            
+            navigator.clipboard.writeText(code.innerText).then(() => {
+                btn.innerText = "Copied!";
+                btn.style.background = "var(--accent-cyan)";
+                btn.style.color = "var(--bg-base)";
+                setTimeout(() => {
+                    btn.innerText = "Copy";
+                    btn.style.background = "rgba(56, 189, 248, 0.1)";
+                    btn.style.color = "var(--accent-cyan)";
+                }, 2000);
+            });
+        }
+
+        // Light/Dark Theme selector
+        function toggleTheme(isLight) {
+            const body = document.body;
+            const themeStyle = document.getElementById("prism-theme");
+            
+            if (isLight) {
+                body.classList.add("light-mode");
+                themeStyle.href = "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css";
+                document.querySelector(".mode-toggle-label").innerText = "Light Theme";
+                mermaid.initialize({ startOnLoad: false, theme: 'default' });
+            } else {
+                body.classList.remove("light-mode");
+                themeStyle.href = "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css";
+                document.querySelector(".mode-toggle-label").innerText = "Dark Theme";
+                mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+            }
+            // Re-render mermaid views
+            mermaid.run();
+        }
+
+        // Track active section as user scrolls
+        window.addEventListener('scroll', () => {
+            const sections = document.querySelectorAll('section');
+            const navLinks = document.querySelectorAll('.menu-link');
+            let current = '';
+            
+            sections.forEach(sec => {
+                const top = sec.offsetTop - 120;
+                if (window.scrollY >= top) {
+                    current = sec.getAttribute('id');
+                }
+            });
+            
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) {
+                    link.classList.add('active');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
