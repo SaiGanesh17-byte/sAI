@@ -1,6 +1,10 @@
 from typing import Dict, Any
 from tools.base import BaseTool
 from duckduckgo_search import DDGS
+import warnings
+
+# Suppress the duckduckgo_search package rename runtime warning
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="duckduckgo_search")
 
 class SearchTool(BaseTool):
     @property

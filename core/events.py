@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import Callable, Dict, List, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 class EventType(Enum):
     USER_MESSAGE = "USER_MESSAGE"
@@ -25,7 +25,7 @@ class Event:
         self.event_type = event_type
         self.data = data
         self.source = source
-        self.timestamp = datetime.utcnow()
+        self.timestamp = datetime.now(timezone.utc)
 
 class EventBus:
     """

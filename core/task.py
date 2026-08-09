@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from core.context import TaskContext
@@ -19,7 +19,7 @@ class Task:
 
     status: str = "CREATED"
 
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     context: TaskContext = field(init=False)
 

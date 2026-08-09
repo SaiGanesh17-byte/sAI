@@ -1,6 +1,6 @@
 from enum import Enum
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import uuid
 
@@ -22,7 +22,7 @@ class Message:
     type: MessageType
     payload: Dict[str, Any]
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 class ArtifactKind(Enum):
@@ -44,7 +44,7 @@ class Artifact:
     author: str
     content: str
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created: datetime = field(default_factory=datetime.utcnow)
+    created: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     path: Optional[str] = None
     version: int = 1
 

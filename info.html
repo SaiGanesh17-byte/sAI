@@ -918,66 +918,102 @@
     </section>
 
     <!-- Setup Guide Section -->
-    <section id="setup">
+    <section id="setup" style="background: linear-gradient(180deg, rgba(102, 252, 241, 0.01) 0%, rgba(102, 252, 241, 0.03) 100%); padding: 100px 0;">
         <div class="container">
             <div class="section-header">
-                <h2>Quick Start & Setup</h2>
-                <p>Get sAI up and running locally in under 3 minutes.</p>
+                <h2>Quick Onboarding & Setup</h2>
+                <p>Complete setup to start building with sAI on your local machine.</p>
             </div>
 
-            <div style="max-width: 800px; margin: 0 auto; text-align: left;">
-                <h3 style="font-size:18px; margin-bottom:12px;">1. Clone & Set Environment</h3>
-                <p style="font-size:14.5px; opacity:0.8; margin-bottom:14px;">Ensure you have python 3.8+ and pip configured. Setup your remote API Keys:</p>
-                <div class="code-block-container">
-                    <div class="code-header">BASH</div>
-                    <div class="code-body">
-                        git clone https://github.com/SaiGanesh17-byte/sAI.git<br>
-                        cd sAI<br>
-                        cp .env.template .env
-                    </div>
-                </div>
-
-                <h3 style="font-size:18px; margin-bottom:12px; margin-top:30px;">2. Install Dependencies</h3>
-                <p style="font-size:14.5px; opacity:0.8; margin-bottom:14px;">Build virtual environment and compile standard requirements:</p>
-                <div class="code-block-container">
-                    <div class="code-header">BASH</div>
-                    <div class="code-body">
-                        python3 -m venv venv<br>
-                        source venv/bin/activate<br>
-                        pip install -r requirements.txt
-                    </div>
-                </div>
-
-                <h3 style="font-size:18px; margin-bottom:12px; margin-top:30px;">3. Start the sAI Application</h3>
-                <p style="font-size:14.5px; opacity:0.8; margin-bottom:14px;">sAI offers three visual interface options to interact with your codebase depending on your workflow:</p>
+            <!-- Onboarding Grid Cards -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; margin-bottom: 50px;">
                 
-                <div style="display:flex; flex-direction:column; gap:16px; margin-top:10px;">
-                    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); padding:16px; border-radius:12px; text-align:left;">
-                        <div style="font-weight:600; color:var(--accent-cyan); font-size:14px; margin-bottom:6px;">Option A: Interactive Web Dashboard (Recommended)</div>
-                        <div style="font-size:12.5px; opacity:0.8; margin-bottom:10px;">Launches the full neumorphic visual dashboard on port 8000 (includes file pinning, CPU profilers, and DAG inspects).</div>
-                        <div class="code-block-container" style="margin-bottom:0;">
-                            <div class="code-header">BASH</div>
-                            <div class="code-body" style="padding:10px;">python3 app/main.py --web</div>
+                <!-- Card 1 -->
+                <div class="card" style="background: var(--bg-surface); padding: 30px; border-radius: 20px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255,255,255,0.05); min-height: 380px;">
+                    <div>
+                        <div style="width: 32px; height: 32px; border-radius: 50%; background: rgba(102,252,241,0.1); color: var(--accent-cyan); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; margin-bottom: 20px; font-family:'Space Grotesk', sans-serif;">1</div>
+                        <h3 style="font-size: 18px; margin-bottom: 8px;">Clone & Environment</h3>
+                        <p style="font-size: 13.5px; opacity: 0.8; margin-bottom: 20px;">Download the repository files to your workspace and duplicate the environment template.</p>
+                    </div>
+                    <div class="code-block-container" style="margin-top: auto;">
+                        <div class="code-header" style="display:flex; justify-content:space-between; align-items:center;">
+                            <span>BASH</span>
+                            <button onclick="copyText('git clone https://github.com/SaiGanesh17-byte/sAI.git && cd sAI && cp .env.template .env')" style="background:transparent; border:none; color:var(--accent-cyan); cursor:pointer; font-size:10px; font-weight:bold; font-family:'Space Grotesk', sans-serif;">COPY</button>
+                        </div>
+                        <div class="code-body" style="font-size: 11px;">
+                            git clone https://github.com/SaiGanesh17-byte/sAI.git<br>
+                            cd sAI<br>
+                            cp .env.template .env
                         </div>
                     </div>
+                </div>
 
-                    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); padding:16px; border-radius:12px; text-align:left;">
-                        <div style="font-weight:600; color:var(--accent-cyan); font-size:14px; margin-bottom:6px;">Option B: Interactive Terminal TUI Console</div>
-                        <div style="font-size:12.5px; opacity:0.8; margin-bottom:10px;">Launches a premium terminal interface with a side-by-side chat history container and inspector.</div>
-                        <div class="code-block-container" style="margin-bottom:0;">
-                            <div class="code-header">BASH</div>
-                            <div class="code-body" style="padding:10px;">python3 ui/terminal.py</div>
+                <!-- Card 2 -->
+                <div class="card" style="background: var(--bg-surface); padding: 30px; border-radius: 20px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255,255,255,0.05); min-height: 380px;">
+                    <div>
+                        <div style="width: 32px; height: 32px; border-radius: 50%; background: rgba(102,252,241,0.1); color: var(--accent-cyan); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; margin-bottom: 20px; font-family:'Space Grotesk', sans-serif;">2</div>
+                        <h3 style="font-size: 18px; margin-bottom: 8px;">Install Dependencies</h3>
+                        <p style="font-size: 13.5px; opacity: 0.8; margin-bottom: 20px;">Initialize a virtual python environment and install all packages listed in requirements.</p>
+                    </div>
+                    <div class="code-block-container" style="margin-top: auto;">
+                        <div class="code-header" style="display:flex; justify-content:space-between; align-items:center;">
+                            <span>BASH</span>
+                            <button onclick="copyText('python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt')" style="background:transparent; border:none; color:var(--accent-cyan); cursor:pointer; font-size:10px; font-weight:bold; font-family:'Space Grotesk', sans-serif;">COPY</button>
+                        </div>
+                        <div class="code-body" style="font-size: 11px;">
+                            python3 -m venv venv<br>
+                            source venv/bin/activate<br>
+                            pip install -r requirements.txt
                         </div>
                     </div>
+                </div>
 
-                    <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04); padding:16px; border-radius:12px; text-align:left;">
-                        <div style="font-weight:600; color:var(--accent-cyan); font-size:14px; margin-bottom:6px;">Option C: Minimalist CLI prompt</div>
-                        <div style="font-size:12.5px; opacity:0.8; margin-bottom:10px;">Launches a lightweight conversational interface directly in your shell stream.</div>
-                        <div class="code-block-container" style="margin-bottom:0;">
-                            <div class="code-header">BASH</div>
-                            <div class="code-body" style="padding:10px;">python3 app/main.py --cli</div>
+                <!-- Card 3 -->
+                <div class="card" style="background: var(--bg-surface); padding: 30px; border-radius: 20px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid rgba(255,255,255,0.05); min-height: 380px;">
+                    <div>
+                        <div style="width: 32px; height: 32px; border-radius: 50%; background: rgba(102,252,241,0.1); color: var(--accent-cyan); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; margin-bottom: 20px; font-family:'Space Grotesk', sans-serif;">3</div>
+                        <h3 style="font-size: 18px; margin-bottom: 8px;">Select Launch Mode</h3>
+                        <p style="font-size: 13.5px; opacity: 0.8; margin-bottom: 20px;">Activate the multi-agent engine using your preferred client console flags.</p>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: auto;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(0,0,0,0.15); padding:8px 12px; border-radius:8px;">
+                            <span style="font-size:11.5px; font-family:monospace; color:var(--text-bright);">python3 app/main.py --web</span>
+                            <button class="term-chip" style="margin:0; padding:2px 8px; font-size:9.5px;" onclick="copyText('python3 app/main.py --web')">WEB</button>
+                        </div>
+                        <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(0,0,0,0.15); padding:8px 12px; border-radius:8px;">
+                            <span style="font-size:11.5px; font-family:monospace; color:var(--text-bright);">python3 app/main.py --tui</span>
+                            <button class="term-chip" style="margin:0; padding:2px 8px; font-size:9.5px;" onclick="copyText('python3 app/main.py --tui')">TUI</button>
+                        </div>
+                        <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(0,0,0,0.15); padding:8px 12px; border-radius:8px;">
+                            <span style="font-size:11.5px; font-family:monospace; color:var(--text-bright);">python3 app/main.py --cli</span>
+                            <button class="term-chip" style="margin:0; padding:2px 8px; font-size:9.5px;" onclick="copyText('python3 app/main.py --cli')">CLI</button>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Centered Troubleshooting Accordion Drawer -->
+            <div style="max-width: 600px; margin: 0 auto; text-align: center;">
+                <div style="font-size: 13.5px; opacity: 0.7; margin-bottom: 12px;">Setup didn't work? Need to configure keys?</div>
+                <button class="btn btn-secondary" onclick="toggleTroubleDrawer()" style="padding: 10px 24px; border-radius: 30px; font-size: 12.5px; font-weight:600;" id="trouble-drawer-btn">View Troubleshooting & Env Config</button>
+                
+                <div id="trouble-drawer-content" style="display: none; margin-top: 20px; text-align: left; background: var(--bg-surface); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 24px; animation: fadeIn 0.3s ease;">
+                    <h4 style="font-size:14px; color:var(--accent-cyan); margin-bottom:8px;">🔌 Required Environment Variables (.env)</h4>
+                    <p style="font-size:12.5px; opacity:0.8; margin-bottom:14px;">Open the <code>.env</code> file you copied in Step 1 and supply your API access keys:</p>
+                    <div class="code-block-container" style="margin-bottom:16px;">
+                        <div class="code-header">ENV TEMPLATE</div>
+                        <div class="code-body" style="font-size:11px;">
+                            OPENAI_API_KEY=your-openai-api-key<br>
+                            NVIDIA_API_KEY=your-nvidia-api-key<br>
+                            OLLAMA_HOST=http://localhost:11434
+                        </div>
+                    </div>
+                    
+                    <h4 style="font-size:14px; color:var(--accent-cyan); margin-bottom:8px;">⚠️ Common Warning: ModuleNotFoundError: No module named 'openai'</h4>
+                    <p style="font-size:12.5px; opacity:0.8; margin-bottom:0; line-height: 1.5;">
+                        This error occurs if your global Python environment does not have dependencies installed. Make sure you activate your virtual environment (<code>source venv/bin/activate</code>) before running launcher scripts, or run the interpreter from the venv directly:
+                        <code style="font-family:monospace; background:rgba(0,0,0,0.3); padding:2px 6px; border-radius:4px; color:var(--accent-revert); display:block; margin-top:6px; text-align:center;">venv/bin/python app/main.py --web</code>
+                    </p>
                 </div>
             </div>
         </div>
@@ -1005,6 +1041,29 @@
             
             document.getElementById(tabId).classList.add('active');
             event.target.classList.add('active');
+        }
+
+        // Copy text utility
+        function copyText(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = event.target;
+                const oldText = btn.innerText;
+                btn.innerText = "COPIED!";
+                setTimeout(() => { btn.innerText = oldText; }, 1500);
+            });
+        }
+
+        // Toggle troubleshooting drawer
+        function toggleTroubleDrawer() {
+            const content = document.getElementById("trouble-drawer-content");
+            const btn = document.getElementById("trouble-drawer-btn");
+            if (content.style.display === "none" || content.style.display === "") {
+                content.style.display = "block";
+                btn.innerText = "Hide Troubleshooting";
+            } else {
+                content.style.display = "none";
+                btn.innerText = "View Troubleshooting & Env Config";
+            }
         }
 
         // Architecture info boxes descriptions
