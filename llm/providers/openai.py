@@ -41,6 +41,30 @@ class OpenAIProvider(BaseProvider):
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
 
+    def complete_with_tools(self, messages, model: str, tools, temperature: float = 0.2, **kwargs):
+        client = self._get_client()
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            tools=tools,
+            **kwargs
+        )
+        if hasattr(response, "usage") and response.usage:
+            from llm.tracker import token_tracker
+            token_tracker.add(response.usage.prompt_tokens, response.usage.completion_tokens)
+        message = response.choices[0].message
+        tool_calls = []
+        if message.tool_calls:
+            import json
+            for tc in message.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments)
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+                tool_calls.append({"name": tc.function.name, "arguments": args})
+        return {"content": message.content, "tool_calls": tool_calls}
+
     def embed(self, text: str) -> List[float]:
         client = self._get_client()
         response = client.embeddings.create(

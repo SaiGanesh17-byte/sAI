@@ -3,17 +3,26 @@ from typing import List, Dict, Iterator
 from llm.providers.base import BaseProvider
 from openai import OpenAI
 
-class OllamaProvider(BaseProvider):
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+
+class OpenRouterProvider(BaseProvider):
+    """
+    OpenRouter is OpenAI-chat-completions-compatible, so this mirrors
+    OpenAIProvider/NvidiaProvider but points at OpenRouter's base URL and
+    reads OPENROUTER_API_KEY (injected into the environment by
+    core.settings.load_settings, same pattern as NVIDIA_API_KEY/OPENAI_API_KEY).
+    """
+
     def __init__(self):
         self._client = None
 
     def _get_client(self) -> OpenAI:
         if not self._client:
-            base_url = os.getenv("OLLAMA_API_BASE_URL", "http://localhost:11434/v1")
-            self._client = OpenAI(
-                api_key="ollama",
-                base_url=base_url
-            )
+            api_key = os.getenv("OPENROUTER_API_KEY")
+            if not api_key:
+                raise ValueError("OPENROUTER_API_KEY is not configured.")
+            self._client = OpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
         return self._client
 
     def complete(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.2, **kwargs) -> str:
@@ -67,12 +76,17 @@ class OllamaProvider(BaseProvider):
         return {"content": message.content, "tool_calls": tool_calls}
 
     def embed(self, text: str) -> List[float]:
-        return [0.0] * 768
+        # OpenRouter has no unified embeddings endpoint across its models.
+        return [0.0] * 1536
 
     def health_check(self) -> bool:
         try:
             client = self._get_client()
-            client.models.list()
+            client.chat.completions.create(
+                model="openai/gpt-4o-mini",
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=1
+            )
             return True
         except Exception:
             return False

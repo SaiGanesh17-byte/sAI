@@ -10,6 +10,16 @@ class BaseProvider(ABC):
         pass
 
     @abstractmethod
+    def complete_with_tools(
+        self, messages: List[Dict[str, str]], model: str, tools: List[Dict[str, Any]], temperature: float = 0.2, **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Send a completion request with OpenAI-style function-calling tools attached.
+        Returns {"content": str|None, "tool_calls": [{"name": str, "arguments": dict}]}.
+        """
+        pass
+
+    @abstractmethod
     def stream(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.2, **kwargs) -> Iterator[str]:
         """
         Stream back content tokens.

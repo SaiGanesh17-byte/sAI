@@ -6,12 +6,18 @@ import keyring
 SETTINGS_FILE = Path("/Users/saiganeshongolu/sAI/.sai/settings.json")
 
 DEFAULT_SETTINGS = {
-    "provider": "nvidia",
-    "nvidia_key": "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",
+    "provider": "openrouter",
+    "nvidia_key": "",
     "openai_key": "",
+    "openrouter_key": "",
     "ollama_url": "http://localhost:11434",
-    "coder_model": "meta/llama-3.1-70b-instruct",
-    "reasoner_model": "nvidia/llama-3.3-nemotron-super-49b-v1",
+    "coder_model": "qwen/qwen3-coder-plus",
+    "reasoner_model": "openai/gpt-4o-mini",
+    "jev_model": "",  # empty = reuse whatever "reasoner_model" is currently configured
+    "jev_json_mode": True,
+    "agents_json_mode": True,
+    "context_token_budget": 32000,
+    "use_tool_calling": False,
     "temperature": 0.2,
     "aider_mode": True,
     "graphiti_mode": True,
@@ -47,6 +53,9 @@ def load_settings() -> dict:
         openai_env = os.getenv("OPENAI_API_KEY")
         if openai_env:
             DEFAULT_SETTINGS["openai_key"] = openai_env
+        openrouter_env = os.getenv("OPENROUTER_API_KEY")
+        if openrouter_env:
+            DEFAULT_SETTINGS["openrouter_key"] = openrouter_env
         save_settings(DEFAULT_SETTINGS)
         return DEFAULT_SETTINGS
     try:
@@ -54,20 +63,24 @@ def load_settings() -> dict:
         for k, v in DEFAULT_SETTINGS.items():
             if k not in data:
                 data[k] = v
-        
+
         # Load secure keys from Keychain with plain text settings fallbacks
         nvidia_raw = data.get("nvidia_key", "")
         openai_raw = data.get("openai_key", "")
-        
+        openrouter_raw = data.get("openrouter_key", "")
+
         nv_key = get_secure_key("nvidia_key", nvidia_raw if nvidia_raw != "keyring_secured" else "")
         op_key = get_secure_key("openai_key", openai_raw if openai_raw != "keyring_secured" else "")
-        
+        or_key = get_secure_key("openrouter_key", openrouter_raw if openrouter_raw != "keyring_secured" else "")
+
         data["nvidia_key"] = nv_key
         data["openai_key"] = op_key
-        
+        data["openrouter_key"] = or_key
+
         # Inject keys into env
         os.environ["NVIDIA_API_KEY"] = nv_key
         os.environ["OPENAI_API_KEY"] = op_key
+        os.environ["OPENROUTER_API_KEY"] = or_key
         try:
             from sai.config import settings as sai_settings
             sai_settings.nvidia_api_key = nv_key
@@ -80,24 +93,29 @@ def load_settings() -> dict:
 def save_settings(settings: dict):
     if not SETTINGS_FILE.parent.exists():
         SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        
+
     nv_key = settings.get("nvidia_key", "")
     op_key = settings.get("openai_key", "")
-    
+    or_key = settings.get("openrouter_key", "")
+
     # Attempt to write to secure storage
     saved_nv = set_secure_key("nvidia_key", nv_key)
     saved_op = set_secure_key("openai_key", op_key)
-    
+    saved_or = set_secure_key("openrouter_key", or_key)
+
     clean_settings = dict(settings)
     if saved_nv:
         clean_settings["nvidia_key"] = "keyring_secured"
     if saved_op:
         clean_settings["openai_key"] = "keyring_secured"
-        
+    if saved_or:
+        clean_settings["openrouter_key"] = "keyring_secured"
+
     SETTINGS_FILE.write_text(json.dumps(clean_settings, indent=4), encoding="utf-8")
-    
+
     os.environ["NVIDIA_API_KEY"] = nv_key
     os.environ["OPENAI_API_KEY"] = op_key
+    os.environ["OPENROUTER_API_KEY"] = or_key
     try:
         from sai.config import settings as sai_settings
         sai_settings.nvidia_api_key = nv_key

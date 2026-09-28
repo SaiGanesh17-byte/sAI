@@ -16,6 +16,11 @@ class ModelRouter:
         provider = settings.get("provider", "nvidia")
         
         t_kind = task_kind.lower()
+        if t_kind == "jev":
+            # An unset/empty jev_model reuses reasoner_model, so Jev always tracks
+            # whatever model the rest of the app is actually configured to use.
+            model = settings.get("jev_model") or settings.get("reasoner_model", "nvidia/llama-3.3-nemotron-super-49b-v1")
+            return provider, model
         if "code" in t_kind or "edit" in t_kind or "implement" in t_kind:
             model = settings.get("coder_model", "meta/llama-3.1-70b-instruct")
         else:
