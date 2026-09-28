@@ -9,7 +9,11 @@ class AgentRegistry:
         self.load()
 
     def load(self):
-        config_path = Path("agents/configs")
+        # Resolved relative to this file, not the process's cwd -- `sai` is
+        # meant to be launched from anywhere (see the `Hey sAI` shell
+        # launcher), and a cwd-relative path silently found 0 configs (and
+        # therefore 0 agents) whenever launched outside the project root.
+        config_path = Path(__file__).resolve().parent / "configs"
         for file in config_path.glob("*.yaml"):
             try:
                 with open(file, "r") as f:

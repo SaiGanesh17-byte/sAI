@@ -69,10 +69,22 @@ class AgentRuntime:
             ]
         tools_instruction = "\n".join(tool_desc)
 
+        roster = kernel.list_agents()
+        roster_lines = []
+        for agent_name, agent_obj in roster.items():
+            if agent_name == self.name:
+                continue
+            role = getattr(agent_obj, "role", "")
+            roster_lines.append(f"- {agent_name}: {role}")
+        roster_instruction = "\n".join(roster_lines) if roster_lines else "(no other agents registered)"
+
         system_instruction = f"""{self.system_prompt}
 
 You are the '{self.name}' agent in a collaborative multi-agent loop.
 Your role is: {self.role}
+
+AVAILABLE AGENTS YOU CAN HAND OFF TO (set "next_agent" to one of these EXACT names, or null if you are finished):
+{roster_instruction}
 
 AVAILABLE TOOLS:
 {tools_instruction}
@@ -91,10 +103,59 @@ Respond ONLY with the JSON block. Do not include markdown wraps or conversationa
 
         full_prompt = f"{system_instruction}\n\n{compiled_context}"
 
-        llm_runtime = kernel.get_service("llm_runtime")
-        raw_response = llm_runtime.query(full_prompt, task_kind=self.name, temperature=self.temperature)
+        from core.settings import load_settings
+        settings = load_settings()
+        query_kwargs = {}
+        if settings.get("agents_json_mode"):
+            query_kwargs["response_format"] = {"type": "json_object"}
 
-        parsed = parse_json_response(raw_response, self.name)
+        llm_runtime = kernel.get_service("llm_runtime")
+
+        # Optional real function-calling path (off by default -- see docs/MODELS.md).
+        # Additive: when tool_calls come back, they're merged into the same
+        # `actions` list shape the rest of the pipeline already expects, so
+        # Orchestrator/ExecutionEngine need no changes either way.
+        if settings.get("use_tool_calling") and tool_reg:
+            tools_schema = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t_name,
+                        "description": details.get("description", ""),
+                        "parameters": details.get("schema") or {"type": "object", "properties": {}},
+                    },
+                }
+                for t_name, details in tool_reg.list_tools().items()
+            ]
+            result = llm_runtime.query_with_tools(
+                full_prompt, task_kind=self.name, tools=tools_schema, temperature=self.temperature, model=self.model
+            )
+            raw_response = result.get("content") or ""
+            tool_calls = result.get("tool_calls") or []
+
+            if raw_response.strip():
+                parsed = parse_json_response(raw_response, self.name)
+            else:
+                # The model called tools without also returning a JSON body -- fall
+                # back to sensible defaults for the fields tool_calls doesn't carry.
+                parsed = {
+                    "memory_update": "",
+                    "summary": f"{self.name} invoked {len(tool_calls)} tool(s)." if tool_calls else f"{self.name} produced no output.",
+                    "reasoning": [],
+                    "confidence": 0.9,
+                    "finished": False,
+                    "next_agent": None,
+                    "actions": [],
+                    "findings": [],
+                }
+
+            if tool_calls:
+                parsed["actions"] = [{"tool": tc["name"], "args": tc["arguments"]} for tc in tool_calls]
+        else:
+            raw_response = llm_runtime.query(
+                full_prompt, task_kind=self.name, temperature=self.temperature, model=self.model, **query_kwargs
+            )
+            parsed = parse_json_response(raw_response, self.name)
         
         # Schema validation & single-turn retry loop
         if self.name == "Reviewer":
@@ -114,7 +175,9 @@ Respond ONLY with the JSON block. Do not include markdown wraps or conversationa
             if not is_valid:
                 retry_prompt = f"{full_prompt}\n\n⚠️ Error: The last response failed validation checks: {error_msg}. Please regenerate your response as a valid JSON block containing all keys."
                 try:
-                    raw_response = llm_runtime.query(retry_prompt, task_kind=self.name, temperature=self.temperature)
+                    raw_response = llm_runtime.query(
+                        retry_prompt, task_kind=self.name, temperature=self.temperature, model=self.model, **query_kwargs
+                    )
                     parsed = parse_json_response(raw_response, self.name)
                     
                     is_valid = True

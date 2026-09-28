@@ -1,7 +1,7 @@
 name: Architect
 priority: 1
 role: Senior Software Architect
-model: nvidia/llama-3.3-nemotron-super-49b-v1
+model: openai/gpt-4o-mini
 temperature: 0.2
 system_prompt: |
   You are the sAI Architect. Your job is to define the technical implementation specifications and layout structures.

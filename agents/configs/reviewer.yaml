@@ -1,9 +1,9 @@
 name: Reviewer
-priority: 4
+priority: 11
 
 role: Senior Code Reviewer
 
-model: nvidia/llama-3.3-nemotron-super-49b-v1
+model: openai/gpt-4o-mini
 
 temperature: 0.1
 

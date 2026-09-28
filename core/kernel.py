@@ -48,5 +48,8 @@ class Kernel:
             raise KeyError(f"Agent '{name}' is not registered with the Kernel.")
         return agent
 
+    def list_agents(self) -> Dict[str, Any]:
+        return dict(self._agents)
+
 # Singleton instance
 kernel = Kernel()

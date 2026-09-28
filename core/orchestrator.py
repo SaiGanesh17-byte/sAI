@@ -1,9 +1,11 @@
 import os
 from pathlib import Path
+from typing import Optional
 from core.kernel import kernel
 from llm.providers.nvidia import NvidiaProvider
 from llm.providers.openai import OpenAIProvider
 from llm.providers.ollama import OllamaProvider
+from llm.providers.openrouter import OpenRouterProvider
 from llm.runtime import LLMRuntime
 from tools.registry import ToolRegistry
 from tools.filesystem import ReadFileTool, WriteFileTool, PatchFileTool, ListDirectoryTool
@@ -12,6 +14,7 @@ from tools.git import GitTool
 from tools.search import SearchTool, GrepAstTool, CodebaseSearchTool
 from tools.python import PythonTool
 from tools.memory import MemoryTool
+from tools.math import MathTool
 from repository.context import RepositoryContext
 from execution.engine import ExecutionEngine
 from core.events import event_bus, EventType
@@ -33,6 +36,7 @@ class Orchestrator:
             kernel.register_provider("nvidia", NvidiaProvider())
             kernel.register_provider("openai", OpenAIProvider())
             kernel.register_provider("ollama", OllamaProvider())
+            kernel.register_provider("openrouter", OpenRouterProvider())
         except Exception:
             pass
 
@@ -51,6 +55,7 @@ class Orchestrator:
             tool_reg.register(CodebaseSearchTool())
             tool_reg.register(PythonTool())
             tool_reg.register(MemoryTool())
+            tool_reg.register(MathTool())
             kernel.register_service("tool_registry", tool_reg)
 
             repo_ctx = RepositoryContext.get_cached_context(WORKSPACE_ROOT)
@@ -58,42 +63,49 @@ class Orchestrator:
         except Exception:
             pass
 
-    def run(self, task: Task):
+    def run(self, task: Task, start_agent: Optional[str] = None):
         event_bus.publish(EventType.TASK_STARTED, {"task_id": task.id}, source="Orchestrator")
 
-        cleaned_goal = task.goal.strip().lower().rstrip(".!?")
-        if cleaned_goal in ["hi", "hello", "hey", "greetings", "yo"]:
-            response_msg = Message(
-                sender="sAI",
-                receiver="User",
-                type=MessageType.SUMMARY,
-                payload={"summary": "Hello! I am sAI, your AI Operating System. How can I help you today?"}
+        if start_agent:
+            # Resuming an interrupted turn (e.g. after an inline permission approval) —
+            # skip the greeting short-circuit and initial planning message, and
+            # continue the loop from the agent whose action was interrupted.
+            current_agent_name = start_agent
+        else:
+            cleaned_goal = task.goal.strip().lower().rstrip(".!?")
+            if cleaned_goal in ["hi", "hello", "hey", "greetings", "yo"]:
+                response_msg = Message(
+                    sender="sAI",
+                    receiver="User",
+                    type=MessageType.SUMMARY,
+                    payload={"summary": "Hello! I am sAI, your AI Operating System. How can I help you today?"}
+                )
+                response_msg.metadata["response"] = AgentResponse(
+                    agent="sAI",
+                    summary="Greeting processed locally.",
+                    reasoning=["Simple greeting detected."],
+                    confidence=1.0,
+                    finished=True
+                )
+                task.context.conversation.add(response_msg)
+                event_bus.publish(EventType.AGENT_FINISHED, {"agent": "sAI", "msg": response_msg}, source="Orchestrator")
+                event_bus.publish(EventType.TASK_FINISHED, {"task_id": task.id}, source="Orchestrator")
+                return
+
+            first = Message(
+                sender="User",
+                receiver="Planner",
+                type=MessageType.TASK,
+                payload={"content": task.goal}
             )
-            response_msg.metadata["response"] = AgentResponse(
-                agent="sAI",
-                summary="Greeting processed locally.",
-                reasoning=["Simple greeting detected."],
-                confidence=1.0,
-                finished=True
-            )
-            task.context.conversation.add(response_msg)
-            event_bus.publish(EventType.AGENT_FINISHED, {"agent": "sAI", "msg": response_msg}, source="Orchestrator")
-            event_bus.publish(EventType.TASK_FINISHED, {"task_id": task.id}, source="Orchestrator")
-            return
+            task.context.conversation.add(first)
 
-        first = Message(
-            sender="User",
-            receiver="Planner",
-            type=MessageType.TASK,
-            payload={"content": task.goal}
-        )
-        task.context.conversation.add(first)
+            scheduler = DAGScheduler()
+            scheduler.add_task("task_planning", "Planner decomposes user goal into checklist of sub-tasks")
+            scheduler.mark_completed("task_planning")
 
-        scheduler = DAGScheduler()
-        scheduler.add_task("task_planning", "Planner decomposes user goal into checklist of sub-tasks")
-        scheduler.mark_completed("task_planning")
+            current_agent_name = "Planner"
 
-        current_agent_name = "Planner"
         turns = 0
         max_turns = 12
 
@@ -211,8 +223,10 @@ class Orchestrator:
             if response and response.finished:
                 break
 
-            if response and response.next_agent and str(response.next_agent).strip():
-                current_agent_name = str(response.next_agent).strip()
+            requested_next = str(response.next_agent).strip() if (response and response.next_agent) else ""
+            valid_agent_names = {a.name for a in self.agents}
+            if requested_next and requested_next in valid_agent_names:
+                current_agent_name = requested_next
             else:
                 try:
                     curr_idx = next(i for i, a in enumerate(self.agents) if a.name == current_agent_name)
