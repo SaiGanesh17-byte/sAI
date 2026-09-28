@@ -19,18 +19,28 @@ def test_run_risky_script_requires_approval(tmp_workspace, monkeypatch):
     script.write_text("import os\nos.system('echo hi')\n", encoding="utf-8")
 
     tool = PythonTool()
-    paths_before = set(security.APPROVED_PATHS)
+    scripts_before = set(security.APPROVED_SCRIPTS)
     try:
         try:
             tool.execute({"script_path": "risky.py"})
             assert False, "expected PermissionRequestRequired"
-        except PermissionRequestRequired:
-            pass
+        except PermissionRequestRequired as preq:
+            assert preq.kind == "script"
+            # Absolute, so approval doesn't depend on the approver's cwd.
+            assert preq.path == str(script.resolve())
+            security.approve_request(preq.path, preq.kind)
 
-        # Approve it, then the same script should run without raising.
-        security.approve_path(str((tmp_workspace / "risky.py").resolve()))
+        # Approved -- the same script now runs without raising.
         result = tool.execute({"script_path": "risky.py"})
         assert "hi" in result
+
+        # Editing the script after approval must re-require approval.
+        script.write_text("import os\nos.system('echo changed')\n", encoding="utf-8")
+        try:
+            tool.execute({"script_path": "risky.py"})
+            assert False, "expected PermissionRequestRequired after the script changed"
+        except PermissionRequestRequired:
+            pass
     finally:
-        security.APPROVED_PATHS.clear()
-        security.APPROVED_PATHS.update(paths_before)
+        security.APPROVED_SCRIPTS.clear()
+        security.APPROVED_SCRIPTS.update(scripts_before)

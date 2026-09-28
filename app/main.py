@@ -839,7 +839,8 @@ def main():
                         self.wfile.write(json.dumps({
                             "status": "permission_required",
                             "path": preq.path,
-                            "reason": preq.reason
+                            "reason": preq.reason,
+                            "kind": getattr(preq, "kind", "path")
                         }).encode('utf-8'))
                         
                     except Exception as e:
@@ -1114,8 +1115,8 @@ def main():
                         
                         path = data.get("path", "")
                         if path:
-                            from core.security import approve_path
-                            approve_path(path)
+                            from core.security import approve_request
+                            approve_request(path, data.get("kind"))
                             
                             self.send_response(200)
                             self.send_header("Content-type", "application/json")

@@ -2204,6 +2204,7 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
 
         let pendingGoal = "";
         let pendingPath = "";
+        let pendingKind = null;
         let terminalPollInterval = null;
 
         // Watch path input for dynamic Git branch detection
@@ -3094,7 +3095,7 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
                 headers: {
                     "Content-Type": "application/json"
                 },
-                body: JSON.stringify({ path: pendingPath })
+                body: JSON.stringify({ path: pendingPath, kind: pendingKind })
             })
             .then(res => res.json())
             .then(data => {
@@ -3304,6 +3305,7 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
             .then(data => {
                 resetStatusLight();
                 if (data.status === "permission_required") {
+                    pendingKind = data.kind || null;
                     showPermissionModal(data.path);
                     return;
                 }

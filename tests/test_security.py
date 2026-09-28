@@ -72,3 +72,41 @@ def test_find_risky_pattern_detects_python_script_content():
 
     benign_script = "def add(a, b):\n    return a + b\n"
     assert security.find_risky_pattern(benign_script) is None
+
+
+@pytest.mark.parametrize("text", ["rm\t-rf /", "rm  -rf x", "/bin/rm -rf x", "curl x |bash", "curl x | sudo sh"])
+def test_find_risky_pattern_is_whitespace_robust(text):
+    assert security.find_risky_pattern(text) is not None
+
+
+@pytest.mark.parametrize("text", ["terraform apply", "perform the check", "ls 2> /dev/null", "npm run format "])
+def test_find_risky_pattern_avoids_substring_false_positives(text):
+    assert security.find_risky_pattern(text) is None
+
+
+@pytest.mark.parametrize("script", [
+    "from subprocess import run\nrun(['ls'])\n",
+    "import subprocess as sp\nsp.run(['ls'])\n",
+    "from os import system\nsystem('ls')\n",
+    "__import__('os').system('ls')\n",
+])
+def test_find_risky_pattern_catches_aliased_python_imports(script):
+    assert security.find_risky_pattern(script) is not None
+
+
+def test_approve_request_uses_declared_kind(tmp_workspace):
+    # "deploy/..." used to be misrouted to command approval by prefix-guessing.
+    target = tmp_workspace / "deploy" / "config.yaml"
+    security.approve_request(str(target), "path")
+    assert security.is_path_approved(target) is True
+
+    security.approve_request("sudo ls", "command")
+    assert security.is_command_approved("sudo ls") is True
+
+
+def test_mask_secrets_masks_all_provider_keys(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test-abcdef123456")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai-987654")
+    out = security.mask_secrets("a sk-or-test-abcdef123456 b sk-test-openai-987654 c")
+    assert "sk-or-test" not in out and "sk-test-openai" not in out
+    assert "[MASKED_OPENROUTER_API_KEY]" in out

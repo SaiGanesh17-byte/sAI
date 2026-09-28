@@ -39,7 +39,14 @@ class AsyncProcessManager:
                     try:
                         check = subprocess.run(["docker", "info"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2.0)
                         if check.returncode == 0:
-                            run_cmd = f'docker run --rm -v "{cwd}":/workspace -w /workspace alpine sh -c {repr(command)}'
+                            # shlex.quote, not repr(): repr() can emit a double-quoted
+                            # string, which the *host* shell expands ($(...), $VAR)
+                            # before docker ever runs -- escaping the sandbox.
+                            import shlex
+                            run_cmd = (
+                                f"docker run --rm -v {shlex.quote(cwd + ':/workspace')} -w /workspace "
+                                f"alpine sh -c {shlex.quote(command)}"
+                            )
                     except Exception:
                         pass
                 
@@ -153,11 +160,21 @@ class TerminalTool(BaseTool):
             if not consume_approved_command(command):
                 raise PermissionRequestRequired(
                     path=command,
-                    reason=f"Destructive command execution approval (matched pattern: '{matched_pattern}')."
+                    reason=f"Destructive command execution approval (matched pattern: '{matched_pattern}').",
+                    kind="command",
                 )
 
-        # Command Path Travel Sanitization Check
-        paths = re.findall(r'(?:/[a-zA-Z0-9_\-\.]+)+|(?:\.\./)+[a-zA-Z0-9_\-\./]*', command)
+        # Command Path Travel Sanitization Check. Still a heuristic (e.g. it can't
+        # see paths built at runtime) -- docker_sandbox is the real boundary.
+        # Home-directory references never resolve inside the workspace; the
+        # path regex below misses bare "~" / "$HOME" (e.g. "cd ~ && cat .zshrc").
+        if re.search(r'(^|[\s=:;&|(`])~|\$\{?HOME\b', command):
+            return "Security Error: Command references the home directory outside sandbox constraints. Access denied."
+        # URLs contain "/segment" runs that aren't filesystem paths.
+        path_scan = re.sub(r'[a-zA-Z][a-zA-Z0-9+.\-]*://\S+', ' ', command)
+        paths = re.findall(r'(?:/[a-zA-Z0-9_\-\.]+)+|(?:\.\./)+[a-zA-Z0-9_\-\./]*', path_scan)
+        # Bare "/" and ".." tokens (e.g. "cd .. && ls", "ls /") slip past the regex above.
+        paths += re.findall(r'(?:^|(?<=[\s;&|(]))(\.\.|/)(?=$|[\s;&|)])', path_scan)
         for p in paths:
             target_path = Path(p)
             if not target_path.is_absolute():

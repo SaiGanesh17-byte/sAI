@@ -1,4 +1,6 @@
+import hashlib
 import os
+import re
 from pathlib import Path
 from typing import Optional
 from app import config
@@ -181,31 +183,55 @@ def revert_to_transaction_snapshot(session_id: str, target_tx_id: int) -> tuple:
 
 # Centralized risky-content detection, shared by any tool that runs shell
 # commands or executes script content (TerminalTool, PythonTool). This is a
-# substring-matching heuristic, not a claim of airtight command-injection
+# pattern-matching heuristic, not a claim of airtight command-injection
 # defense -- real isolation is the optional docker_sandbox setting. The goal
 # here is consistent coverage across tools instead of a narrower, duplicated,
 # shell-only list.
+#
+# (label, regex) pairs, matched against lowercased text. Word boundaries and
+# \s (not a literal space) matter: plain substrings both missed "rm<TAB>-rf"
+# and falsely flagged "terraform apply" / "perform x" as containing "rm ".
 RISKY_PATTERNS = [
     # shell
-    "rm ", "sudo ", "chmod 777", "mkfs", "dd if=", "shutdown", "reboot",
-    "kill -9", "> /dev/", ":(){ :|:& };:",
-    "git push", "git clean", "npm publish", "docker run", "deploy", "delete",
+    ("rm ", r"\brm\s"),
+    ("sudo ", r"\bsudo\s"),
+    ("chmod 777", r"\bchmod\s+(-r\s+)?777\b"),
+    ("mkfs", r"\bmkfs\b"),
+    ("dd if=", r"\bdd\s+if="),
+    ("shutdown", r"\bshutdown\b"),
+    ("reboot", r"\breboot\b"),
+    ("kill -9", r"\bkill\s+-9\b"),
+    ("> /dev/", r">\s*/dev/(?!null\b)"),
+    (":(){ :|:& };:", r":\(\)\s*\{\s*:\|:&\s*\};:"),
+    ("git push", r"\bgit\s+push\b"),
+    ("git clean", r"\bgit\s+clean\b"),
+    ("npm publish", r"\bnpm\s+publish\b"),
+    ("docker run", r"\bdocker\s+run\b"),
+    ("deploy", r"\bdeploy\b"),
+    ("delete", r"\bdelete\b"),
     # pipe-to-shell
-    "| sh", "| bash", "|sh", "|bash",
+    ("| sh", r"\|\s*(sudo\s+)?(ba|z)?sh\b"),
     # python-script content
-    "os.system", "subprocess.run", "subprocess.call", "subprocess.popen",
-    "shutil.rmtree", "os.remove", "os.unlink", "os.rmdir",
+    ("os.system", r"\bos\.system\b"),
+    ("os.popen", r"\bos\.popen\b"),
+    ("subprocess", r"\bsubprocess\.(run|call|popen|check_call|check_output|getoutput)\b"),
+    ("import subprocess", r"\bimport\s+subprocess\b|\bfrom\s+subprocess\s+import\b"),
+    ("from os import", r"\bfrom\s+os\s+import\b"),
+    ("__import__", r"\b__import__\b"),
+    ("shutil.rmtree", r"\bshutil\.rmtree\b"),
+    ("os.remove", r"\bos\.(remove|unlink|rmdir|removedirs)\b"),
 ]
+_RISKY_REGEXES = [(label, re.compile(rx)) for label, rx in RISKY_PATTERNS]
 
 def find_risky_pattern(text: str) -> Optional[str]:
     """
-    Returns the first RISKY_PATTERNS entry found in `text` (case-insensitive),
-    or None if nothing matched.
+    Returns the label of the first RISKY_PATTERNS entry found in `text`
+    (case-insensitive), or None if nothing matched.
     """
     lowered = (text or "").lower()
-    for pattern in RISKY_PATTERNS:
-        if pattern in lowered:
-            return pattern
+    for label, regex in _RISKY_REGEXES:
+        if regex.search(lowered):
+            return label
     return None
 
 def approve_command(command: str):
@@ -224,7 +250,52 @@ def consume_approved_command(command: str) -> bool:
             return True
     return False
 
+APPROVED_SCRIPTS = set()  # {(resolved_path, sha256_of_content)}
+
+def _file_sha256(path: Path) -> Optional[str]:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except Exception:
+        return None
+
+def approve_script(path_str: str):
+    """
+    Approves a script for its content *as of now*. If the file is edited after
+    approval (e.g. by an agent), is_script_approved() returns False again, so
+    approving a benign-looking script can't be reused to run a rewritten one.
+    """
+    resolved = Path(path_str).resolve()
+    digest = _file_sha256(resolved)
+    if digest:
+        APPROVED_SCRIPTS.add((resolved, digest))
+
+def is_script_approved(path: Path) -> bool:
+    resolved = path.resolve()
+    digest = _file_sha256(resolved)
+    return digest is not None and (resolved, digest) in APPROVED_SCRIPTS
+
+def approve_request(path_str: str, kind: Optional[str] = None):
+    """
+    Approves a PermissionRequestRequired by its declared kind. Callers should
+    use this (passing preq.kind) rather than approve_path(), whose
+    prefix-guessing misrouted e.g. "sudo ls" into APPROVED_PATHS (so the
+    approved command was re-blocked forever) and "deploy/x.yaml" into
+    APPROVED_COMMANDS.
+    """
+    if kind == "command":
+        approve_command(path_str)
+    elif kind == "script":
+        approve_script(path_str)
+    elif kind == "path":
+        try:
+            APPROVED_PATHS.add(Path(path_str).resolve())
+        except Exception:
+            pass
+    else:
+        approve_path(path_str)
+
 def approve_path(path_str: str):
+    # Legacy entry point for callers that don't know the request kind.
     # Check if it looks like a terminal command instead of a file path
     cmd_prefixes = ["rm ", "git ", "npm ", "docker ", "deploy", "delete", "cargo ", "go ", "pip "]
     if any(path_str.strip().startswith(prefix) for prefix in cmd_prefixes):
@@ -278,12 +349,11 @@ def mask_secrets(text: str) -> str:
     if not text:
         return text
 
-    # Mask NVIDIA API key if it's set
-    nv_key = config.NVIDIA_API_KEY
-    if nv_key and len(nv_key) > 5 and nv_key != "your_nvidia_api_key_here":
-        text = text.replace(nv_key, "[MASKED_NVIDIA_API_KEY]")
-        # Also mask parts of it if it appears in parsed lists
-        if nv_key in text:
-             text = text.replace(nv_key, "[MASKED_NVIDIA_API_KEY]")
+    # Read keys at call time: core/settings.py injects them into os.environ
+    # after startup (from Keychain), so an import-time snapshot would miss them.
+    for env_name in ("NVIDIA_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY"):
+        key = os.environ.get(env_name, "")
+        if key and len(key) > 5 and key != "your_nvidia_api_key_here":
+            text = text.replace(key, f"[MASKED_{env_name}]")
 
     return text

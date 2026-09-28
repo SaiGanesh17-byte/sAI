@@ -49,7 +49,7 @@ class PythonTool(BaseTool):
         if not target_path.exists():
             return f"Error: File '{script_path_str}' does not exist."
 
-        from core.security import find_risky_pattern, is_path_approved
+        from core.security import find_risky_pattern, is_script_approved
         from execution.permissions import PermissionRequestRequired
 
         try:
@@ -58,10 +58,14 @@ class PythonTool(BaseTool):
             script_content = ""
 
         matched_pattern = find_risky_pattern(script_content)
-        if matched_pattern and not is_path_approved(target_path.resolve()):
+        if matched_pattern and not is_script_approved(target_path):
+            # Absolute path: approvers resolve it against their own cwd, so a
+            # relative path approved the wrong file whenever sAI was launched
+            # from outside the workspace, re-prompting forever.
             raise PermissionRequestRequired(
-                path=script_path_str,
-                reason=f"Script contains a potentially risky pattern: '{matched_pattern}'."
+                path=str(target_path.resolve()),
+                reason=f"Script contains a potentially risky pattern: '{matched_pattern}'.",
+                kind="script",
             )
 
         try:
