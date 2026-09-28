@@ -89,14 +89,26 @@ AVAILABLE AGENTS YOU CAN HAND OFF TO (set "next_agent" to one of these EXACT nam
 AVAILABLE TOOLS:
 {tools_instruction}
 
+HOW YOUR TURN WORKS (a tool-use loop):
+- Put the tool calls you need in "actions". They run after you respond, and each result comes
+  back to you as a "System to {self.name}: [tool(target) -> ok|failed|declined]" line in the
+  conversation history below, and you respond again.
+- Work in small steps: e.g. read or list before you edit, then check the result.
+- While you are requesting actions, "summary" says what you are about to do ("Reading app.py to
+  find the router."). Never claim an action succeeded before you have seen its "-> ok" result.
+- When the work is done (or you cannot proceed), return "actions": [] and make "summary" your
+  final answer to the user: what was actually done, based on the tool results -- including any
+  failures -- plus file paths the user will want.
+- If a result says "declined", do not retry that action.
+
 Your response MUST be a JSON object containing these keys:
 - "memory_update": overwrite string content updates for your section of shared memory.
-- "summary": a single sentence summary of your action.
+- "summary": see above -- what you are about to do, or your final answer when "actions" is empty.
 - "reasoning": list of short bulleted thought steps.
 - "confidence": float 0.0 to 1.0.
 - "finished": boolean indicating if overall goal is fully achieved.
 - "next_agent": target next agent name (e.g., 'Coder', 'Reviewer') or null if complete.
-- "actions": list of tool actions you want to run. Format: [{{"tool": "read_file", "args": {{"path": "..."}}}}, ...]
+- "actions": list of tool actions to run now (empty when you are done). Format: [{{"tool": "read_file", "args": {{"path": "..."}}}}, ...]
 
 Respond ONLY with the JSON block. Do not include markdown wraps or conversational greetings outside of JSON.
 """

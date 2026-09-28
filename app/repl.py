@@ -27,6 +27,7 @@ from tools.terminal import TerminalTool
 from jev.decision import JevRouter
 from llm.tracker import token_tracker
 from ui.banner import render_banner, TEAL, VIOLET, DIM
+from agents.loop import LoopResult, run_agent_loop
 from ui.activity import ActivityIndicator, ActivityPrinter, TOOL_LABELS, format_tokens, tool_call_label, tool_result_summary
 
 ROUTE_LABELS = {"direct_answer": "direct", "single_agent": "1 agent", "full_orchestrator": "full team"}
@@ -42,11 +43,6 @@ SHELL_COMMAND_PATTERN = re.compile(
 )
 
 
-
-def _describe_action(action) -> str:
-    args = action.get("args", {}) or {}
-    target = args.get("path") or args.get("script_path") or args.get("command") or ""
-    return f"{action.get('tool', '?')}({target})" if target else str(action.get("tool", "?"))
 
 class SaiRepl:
     def __init__(self):
@@ -369,93 +365,35 @@ class SaiRepl:
             self._run_full_orchestrator()
             return
 
-        self.task.context.current_agent = agent.name
-        event_bus.publish(EventType.AGENT_STARTED, {"agent": agent.name, "turn": 1}, source="Jev")
-
-        user_msg = Message(
+        self.task.context.conversation.add(Message(
             sender="User", receiver=agent.name, type=MessageType.TASK, payload={"content": self.task.goal}
+        ))
+
+        # Tool-use loop: the agent sees each result before it responds again,
+        # so its final message reports what actually happened.
+        loop = run_agent_loop(
+            agent,
+            self.task.context,
+            lambda action: self.orchestrator.execute_action(self.task, agent, action, self._prompt_approval),
+            max_steps=self.orchestrator._max_steps(),
+            source="Jev",
         )
-        self.task.context.conversation.add(user_msg)
+        self._report_loop_stop(loop)
 
-        message = agent.run(self.task.context)
-        response = message.metadata.get("response")
-
-        # Published before the actions run so the agent's message prints above
-        # its ⏺ tool calls, the way Claude Code orders text and tool use.
-        event_bus.publish(EventType.AGENT_FINISHED, {"agent": agent.name, "msg": message}, source="Jev")
-
-        not_done = []
-        if response and response.actions:
-            for action in response.actions:
-                if not self._execute_with_approval(action, agent):
-                    not_done.append(_describe_action(action))
-
-        self.task.context.conversation.add(message)
-
-        # The agent writes its message *before* its actions run, so it reads as
-        # if everything succeeded. Say plainly what didn't happen.
-        if not_done:
+    def _report_loop_stop(self, loop: LoopResult):
+        if loop.stop_reason == "declined":
             self.console.print()
-            self.printer.note(
-                f"[bold yellow]Not completed:[/bold yellow] {escape(', '.join(not_done))} "
-                f"[{DIM}](the message above describes what was attempted)[/{DIM}]"
-            )
-
-    def _execute_with_approval(self, action, agent) -> bool:
-        """Runs one action; returns True only if it actually succeeded."""
-        tool_name = action.get("tool", "")
-        try:
-            result = self.orchestrator.execution_engine.execute(action)
-        except PermissionRequestRequired as preq:
-            if self._prompt_approval(preq, action):
-                approve_request(preq.path, preq.kind)
-                try:
-                    result = self.orchestrator.execution_engine.execute(action)
-                except PermissionRequestRequired:
-                    self._open_tool = None
-                    self.printer.tool_result(f"Still not permitted: {tool_name}", ok=False)
-                    self._record_tool_result(agent, f"NOT PERMITTED: {_describe_action(action)} -- it did not run.")
-                    return False
-            else:
-                # Record it: otherwise the history only holds the agent's
-                # optimistic summary, and later turns (Jev included) claim the
-                # file was written.
-                self._record_tool_result(agent, f"DECLINED by user: {_describe_action(action)} -- it did not run.")
-                return False
-
-        content = result.stdout if result.success else result.stderr
-        self._record_tool_result(agent, content)
-        return result.success
-
-    def _record_tool_result(self, agent, content: str):
-        result_msg = Message(
-            sender="System", receiver=agent.name, type=MessageType.TOOL_RESULT, payload={"content": content}
-        )
-        self.task.context.conversation.add(result_msg)
+            self.printer.note(f"[yellow]Stopped[/yellow] [{DIM}]· you declined {escape(', '.join(loop.declined))} -- tell sAI what to do instead[/{DIM}]")
+        elif loop.stop_reason == "max_steps":
+            self.console.print()
+            self.printer.note(f"[yellow]Paused[/yellow] [{DIM}]· hit the {loop.steps}-step limit (agent_max_steps) -- say \"continue\" to keep going[/{DIM}]")
+        elif loop.stop_reason == "repeating":
+            self.console.print()
+            self.printer.note(f"[yellow]Stopped[/yellow] [{DIM}]· the agent repeated the same actions without progress[/{DIM}]")
 
     # ------------------------------------------------------------------
-    # Jev route: full_orchestrator — the existing multi-agent loop, with
-    # inline permission-approval-and-resume on PermissionRequestRequired.
+    # Jev route: full_orchestrator — the multi-agent loop. Permission
+    # requests are answered inline and the turn continues in place.
     # ------------------------------------------------------------------
     def _run_full_orchestrator(self):
-        self._run_with_permission_retry()
-
-    def _run_with_permission_retry(self, max_retries: int = 5):
-        start_agent: Optional[str] = None
-        for _ in range(max_retries):
-            try:
-                self.orchestrator.run(self.task, start_agent=start_agent)
-                return
-            except PermissionRequestRequired as preq:
-                resume_agent = self.task.context.current_agent
-                if self._prompt_approval(preq):
-                    approve_request(preq.path, preq.kind)
-                    start_agent = resume_agent
-                    continue
-                self.printer.note("[red]Task stopped[/red] -- the permission was declined.")
-                self.task.context.conversation.add(Message(
-                    sender="System", receiver="User", type=MessageType.TOOL_RESULT,
-                    payload={"content": f"DECLINED by user: {preq.path} -- task aborted, that action did not run."},
-                ))
-                return
-        self.printer.note("[red]Task stopped[/red] -- too many permission retries.")
+        self.orchestrator.run(self.task, approve=self._prompt_approval)

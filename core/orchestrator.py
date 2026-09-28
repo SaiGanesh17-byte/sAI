@@ -17,6 +17,7 @@ from tools.memory import MemoryTool
 from tools.math import MathTool
 from repository.context import RepositoryContext
 from execution.engine import ExecutionEngine
+from agents.loop import ActionOutcome, ApproveFn, DEFAULT_MAX_STEPS, execute_with_approval, run_agent_loop
 from core.events import event_bus, EventType
 from core.scheduler import DAGScheduler
 from core.protocol import Message, MessageType, AgentResponse
@@ -63,7 +64,58 @@ class Orchestrator:
         except Exception:
             pass
 
-    def run(self, task: Task, start_agent: Optional[str] = None):
+    def _max_steps(self) -> int:
+        from core.settings import load_settings
+        try:
+            return int(load_settings().get("agent_max_steps", DEFAULT_MAX_STEPS))
+        except (TypeError, ValueError):
+            return DEFAULT_MAX_STEPS
+
+    def execute_action(self, task: Task, agent, action: dict, approve: Optional[ApproveFn] = None) -> ActionOutcome:
+        """
+        Runs one agent action: activity tracking, inline approval, and the
+        post-write hooks (repo-map cache invalidation + auto-linter feedback).
+        Shared by the full-team loop and the single-agent front ends.
+        """
+        from core.security import update_current_activity
+        tool_name = action.get("tool", "")
+        tool_args = action.get("args", {}) or {}
+        target_path = tool_args.get("path", tool_args.get("target_file", tool_args.get("TargetFile", "")))
+        target_cmd = tool_args.get("command", tool_args.get("CommandLine", ""))
+        update_current_activity({"status": "executing", "tool": tool_name, "path": str(target_path), "command": str(target_cmd)})
+        try:
+            outcome = execute_with_approval(self.execution_engine, action, approve)
+        finally:
+            update_current_activity({"status": "thinking", "agent": agent.name, "tool": "", "path": "", "command": ""})
+
+        if outcome.status == "ok" and tool_name in ["write_file", "patch_file"] and target_path:
+            RepositoryContext.invalidate_cache(WORKSPACE_ROOT)
+            file_path = Path(target_path)
+            if not file_path.is_absolute():
+                file_path = WORKSPACE_ROOT / file_path
+            if file_path.exists():
+                if not hasattr(task, "linter_attempts"):
+                    task.linter_attempts = {}
+                tech_stack = ""
+                for note in task.context.memory.notes:
+                    if "Framework Context:" in note:
+                        tech_stack = note.split("Framework Context:")[-1].split(".")[0].strip().lower()
+                linter_err = run_linter_checks(WORKSPACE_ROOT, tech_stack, file_path)
+                if linter_err:
+                    attempts = task.linter_attempts.get(str(file_path), 0) + 1
+                    task.linter_attempts[str(file_path)] = attempts
+                    if attempts > 3:
+                        outcome.content += f"\n\n❌ [AUTO-LINTER ABORTED]: Linter checks failed {attempts} times on {file_path.name}. Syntax verification aborted to prevent infinite loops. Error:\n{linter_err}"
+                    else:
+                        outcome.content += f"\n\n⚠️ AUTO-LINTER COMPILATION WARNING:\n{linter_err}\nYour code has syntax or compile errors. You MUST edit the file to fix this error immediately."
+        return outcome
+
+    def run(self, task: Task, start_agent: Optional[str] = None, approve: Optional[ApproveFn] = None):
+        """
+        With `approve`, permission requests are answered inline and the turn
+        continues; without it they propagate as PermissionRequestRequired
+        (the web UI's approve-then-resume flow).
+        """
         event_bus.publish(EventType.TASK_STARTED, {"task_id": task.id}, source="Orchestrator")
 
         if start_agent:
@@ -126,84 +178,24 @@ class Orchestrator:
                 "path": "",
                 "command": ""
             })
-            event_bus.publish(EventType.AGENT_STARTED, {"agent": agent.name, "turn": turns}, source="Orchestrator")
-
             from core.security import check_and_reset_halt
-            if check_and_reset_halt():
-                raise InterruptedError("Agent loop execution halted by user interrupt.")
+            loop = run_agent_loop(
+                agent,
+                task.context,
+                lambda action, agent=agent: self.execute_action(task, agent, action, approve),
+                max_steps=self._max_steps(),
+                source="Orchestrator",
+                is_halted=check_and_reset_halt,
+            )
+            message = loop.final_message
+            response = message.metadata.get("response") if message else None
 
-            message = agent.run(task.context)
-            response = message.metadata.get("response")
+            if loop.stop_reason == "declined":
+                # The user said no -- hand control back rather than moving on
+                # to the next agent as if the step had happened.
+                break
 
-            if not hasattr(task, "linter_attempts"):
-                task.linter_attempts = {}
-                
-            if response and response.actions:
-                action_turns = 0
-                while response.actions and action_turns < 5:
-                    action_turns += 1
-                    for action in response.actions:
-                        if check_and_reset_halt():
-                            raise InterruptedError("Agent loop execution halted by user interrupt.")
-                        tool_name = action.get("tool", "")
-                        tool_args = action.get("args", {})
-                        
-                        # Support path or target_file arguments
-                        target_path = tool_args.get("path", tool_args.get("target_file", tool_args.get("TargetFile", "")))
-                        target_cmd = tool_args.get("command", tool_args.get("CommandLine", ""))
-                        
-                        update_current_activity({
-                            "status": "executing",
-                            "tool": tool_name,
-                            "path": str(target_path),
-                            "command": str(target_cmd)
-                        })
-                        
-                        tool_result = self.execution_engine.execute(action)
-                        
-                        update_current_activity({
-                            "status": "thinking",
-                            "agent": agent.name,
-                            "tool": "",
-                            "path": "",
-                            "command": ""
-                        })
-                        
-                        tool_content = tool_result.stdout if tool_result.success else tool_result.stderr
-                        
-                        if tool_result.success and tool_name in ["write_file", "patch_file"]:
-                            RepositoryContext.invalidate_cache(WORKSPACE_ROOT)
-                            file_arg = tool_args.get("path", tool_args.get("target_file", tool_args.get("TargetFile", "")))
-                            if file_arg:
-                                file_path = Path(file_arg)
-                                if not file_path.is_absolute():
-                                    file_path = WORKSPACE_ROOT / file_path
-                                if file_path.exists():
-                                    tech_stack = ""
-                                    for note in task.context.memory.notes:
-                                        if "Framework Context:" in note:
-                                            tech_stack = note.split("Framework Context:")[-1].split(".")[0].strip().lower()
-                                            
-                                    linter_err = run_linter_checks(WORKSPACE_ROOT, tech_stack, file_path)
-                                    if linter_err:
-                                        attempts = task.linter_attempts.get(str(file_path), 0) + 1
-                                        task.linter_attempts[str(file_path)] = attempts
-                                        if attempts > 3:
-                                            tool_content += f"\n\n❌ [AUTO-LINTER ABORTED]: Linter checks failed {attempts} times on {file_path.name}. Syntax verification aborted to prevent infinite loops. Error:\n{linter_err}"
-                                        else:
-                                            tool_content += f"\n\n⚠️ AUTO-LINTER COMPILATION WARNING:\n{linter_err}\nYour code has syntax or compile errors. You MUST edit the file to fix this error immediately."
-                        result_msg = Message(
-                            sender="System",
-                            receiver=agent.name,
-                            type=MessageType.TOOL_RESULT,
-                            payload={"content": tool_content}
-                        )
-                        task.context.conversation.add(result_msg)
-
-                    message = agent.run(task.context)
-                    response = message.metadata.get("response")
-
-            if agent.name == "Planner":
+            if agent.name == "Planner" and message:
                 planner_content = message.payload.get("content", "")
                 import re
                 tasks_found = re.findall(r'(?:-|\*|\d+\.)\s*\[\s*\]\s*(.+)', planner_content)
@@ -216,9 +208,6 @@ class Orchestrator:
                         task_id = f"task_{idx+1}"
                         dependencies = [f"task_{idx}"] if idx > 0 else []
                         scheduler.add_task(task_id, task_desc.strip(), dependencies)
-
-            task.context.conversation.add(message)
-            event_bus.publish(EventType.AGENT_FINISHED, {"agent": agent.name, "msg": message}, source="Orchestrator")
 
             if response and response.finished:
                 break

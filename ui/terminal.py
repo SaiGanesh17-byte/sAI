@@ -19,13 +19,9 @@ from core.protocol import Message, MessageType
 from core.security import approve_request
 from execution.permissions import PermissionRequestRequired
 from jev.decision import JevRouter
+from agents.loop import run_agent_loop
 
 
-
-def _describe_action(action) -> str:
-    args = action.get("args", {}) or {}
-    target = args.get("path") or args.get("script_path") or args.get("command") or ""
-    return f"{action.get('tool', '?')}({target})" if target else str(action.get("tool", "?"))
 
 class AgentCard(Static):
     """
@@ -371,10 +367,8 @@ class SaiApp(App):
         self.mount_agent_card("sAI", answer, [], "", 1.0)
 
     # ------------------------------------------------------------------
-    # Jev route: single_agent -- one agent turn, actions executed once
-    # (mirrors app/repl.py::SaiRepl._run_single_agent). AGENT_STARTED/
-    # AGENT_FINISHED are published manually since AgentRuntime.execute_turn
-    # only fires them when driven by Orchestrator.run().
+    # Jev route: single_agent -- one agent in the shared tool-use loop
+    # (agents/loop.py; mirrors app/repl.py::SaiRepl._run_single_agent).
     # ------------------------------------------------------------------
     def _run_single_agent_turn(self, agent_name: str) -> None:
         agent = next((a for a in self.orchestrator.agents if a.name == agent_name), None)
@@ -382,82 +376,31 @@ class SaiApp(App):
             self._run_full_orchestrator_with_retry()
             return
 
-        self.sai_task.context.current_agent = agent.name
-        event_bus.publish(EventType.AGENT_STARTED, {"agent": agent.name, "turn": 1}, source="Jev")
-
-        user_msg = Message(
+        self.sai_task.context.conversation.add(Message(
             sender="User", receiver=agent.name, type=MessageType.TASK, payload={"content": self.sai_task.goal}
+        ))
+        # Tool-use loop: the agent sees each result before it responds again.
+        loop = run_agent_loop(
+            agent,
+            self.sai_task.context,
+            lambda action: self.orchestrator.execute_action(self.sai_task, agent, action, self._approve_inline),
+            max_steps=self.orchestrator._max_steps(),
+            source="Jev",
         )
-        self.sai_task.context.conversation.add(user_msg)
+        if loop.stop_reason == "declined":
+            self.call_from_thread(self.mount_tool_line, f"Stopped: you declined {', '.join(loop.declined)}", False)
+        elif loop.stop_reason in ("max_steps", "repeating"):
+            self.call_from_thread(self.mount_tool_line, f"Stopped ({loop.stop_reason.replace('_', ' ')}) -- say \"continue\" to keep going", False)
 
-        message = agent.run(self.sai_task.context)
-        response = message.metadata.get("response")
-
-        not_done = []
-        if response and response.actions:
-            for action in response.actions:
-                if not self._execute_action_with_approval(action, agent):
-                    not_done.append(_describe_action(action))
-
-        self.sai_task.context.conversation.add(message)
-        event_bus.publish(EventType.AGENT_FINISHED, {"agent": agent.name, "msg": message}, source="Jev")
-
-        # The agent's summary is written before its actions run, so it reads as
-        # if everything succeeded -- say plainly what didn't happen.
-        if not_done:
-            self.call_from_thread(
-                self.mount_tool_line, f"Not completed: {', '.join(not_done)} (the summary above describes what was attempted)", False
-            )
-
-    def _execute_action_with_approval(self, action, agent) -> bool:
-        """Runs one action; returns True only if it actually succeeded."""
-        tool_name = action.get("tool", "")
-        try:
-            result = self.orchestrator.execution_engine.execute(action)
-        except PermissionRequestRequired as preq:
-            if self._ask_permission_sync(preq):
-                try:
-                    result = self.orchestrator.execution_engine.execute(action)
-                except PermissionRequestRequired:
-                    self.call_from_thread(self.mount_tool_line, f"Still not permitted: {tool_name}", False)
-                    self._record_tool_result(agent, f"NOT PERMITTED: {_describe_action(action)} -- it did not run.")
-                    return False
-            else:
-                self.call_from_thread(self.mount_tool_line, f"Declined: {tool_name}", False)
-                # Record it, or later turns only see the agent's optimistic summary.
-                self._record_tool_result(agent, f"DECLINED by user: {_describe_action(action)} -- it did not run.")
-                return False
-
-        content = result.stdout if result.success else result.stderr
-        self._record_tool_result(agent, content)
-        return result.success
-
-    def _record_tool_result(self, agent, content: str) -> None:
-        result_msg = Message(
-            sender="System", receiver=agent.name, type=MessageType.TOOL_RESULT, payload={"content": content}
-        )
-        self.sai_task.context.conversation.add(result_msg)
+    def _approve_inline(self, preq: PermissionRequestRequired, action: dict) -> bool:
+        return self._ask_permission_sync(preq)
 
     # ------------------------------------------------------------------
-    # Jev route: full_orchestrator -- the existing multi-agent loop, with
-    # inline permission-approval-and-resume on PermissionRequestRequired
-    # (mirrors app/repl.py::SaiRepl._run_with_permission_retry).
+    # Jev route: full_orchestrator -- the multi-agent loop, with permission
+    # requests answered inline so the turn continues in place.
     # ------------------------------------------------------------------
-    def _run_full_orchestrator_with_retry(self, max_retries: int = 5) -> None:
-        start_agent: Optional[str] = None
-        for _ in range(max_retries):
-            try:
-                self.orchestrator.run(self.sai_task, start_agent=start_agent)
-                return
-            except PermissionRequestRequired as preq:
-                resume_agent = self.sai_task.context.current_agent
-                if self._ask_permission_sync(preq):
-                    approve_request(preq.path, preq.kind)
-                    start_agent = resume_agent
-                    continue
-                self.call_from_thread(self.mount_tool_line, "Permission declined -- aborting this task.", False)
-                return
-        self.call_from_thread(self.mount_tool_line, "Too many permission retries -- aborting.", False)
+    def _run_full_orchestrator_with_retry(self) -> None:
+        self.orchestrator.run(self.sai_task, approve=self._approve_inline)
 
     # ------------------------------------------------------------------
     # Inline permission approval. Blocks the calling worker thread (never

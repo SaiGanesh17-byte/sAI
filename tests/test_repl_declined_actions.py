@@ -32,13 +32,14 @@ def test_declined_action_is_recorded_in_history():
     agent's pre-written summary ("Created query_api.py...") was the only record
     and the next turn confidently told the user the file existed.
     """
-    repl = _repl(approve=False)
-    agent = SimpleNamespace(name="Coder")
-    ok = repl._execute_with_approval({"tool": "write_file", "args": {"path": "query_api.py"}}, agent)
+    from agents.loop import execute_with_approval
 
-    assert ok is False
-    history = [m.payload.get("content", "") for m in repl.task.context.conversation.all()]
-    assert any("DECLINED" in h and "write_file(query_api.py)" in h for h in history)
+    repl = _repl(approve=False)
+    outcome = execute_with_approval(
+        _DenyingEngine(), {"tool": "write_file", "args": {"path": "query_api.py"}}, repl._prompt_approval
+    )
+    assert outcome.status == "declined"
+    assert "DECLINED" in outcome.content and "write_file(query_api.py)" in outcome.content
 
 
 def test_approval_prompt_shows_the_choices(monkeypatch):

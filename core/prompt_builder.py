@@ -1,5 +1,10 @@
 from typing import Any
 
+# Per-message cap and how many recent messages stay uncompacted in the prompt.
+MAX_MESSAGE_CHARS = 8000
+RAW_TAIL_MESSAGES = 10
+
+
 class PromptBuilder:
     @staticmethod
     def build(context: Any, repository: Any, memory: Any, conversation: Any) -> str:
@@ -74,11 +79,23 @@ class PromptBuilder:
                     content = msg.content
                 elif isinstance(payload, dict):
                     content = payload.get("content", payload.get("summary", str(payload)))
+                    # Show which tools an agent asked for, so in the tool-use loop
+                    # it can line its own requests up with the results that follow.
+                    requested = payload.get("actions") or []
+                    if requested:
+                        from agents.loop import describe_action
+                        content = f"{content}\n  (requested: {', '.join(describe_action(a) for a in requested)})"
                 else:
                     content = str(payload)
-                
-                # Structural context compaction: keep last 4 messages raw, compact older ones
-                if num_msgs > 10 and idx < num_msgs - 4:
+
+                content = str(content)
+                if len(content) > MAX_MESSAGE_CHARS:
+                    content = content[:MAX_MESSAGE_CHARS] + f"\n...[{len(content) - MAX_MESSAGE_CHARS} more chars truncated]"
+
+                # Structural context compaction: keep the most recent messages raw, compact
+                # older ones. The window is wide enough to hold a few loop steps' worth of
+                # tool results (a read_file result must survive until the edit that uses it).
+                if num_msgs > RAW_TAIL_MESSAGES + 6 and idx < num_msgs - RAW_TAIL_MESSAGES:
                     if isinstance(payload, dict) and "summary" in payload:
                         content = f"[Summary of Action]: {payload['summary']}"
                     else:
