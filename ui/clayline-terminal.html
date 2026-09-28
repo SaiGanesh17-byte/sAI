@@ -52,6 +52,23 @@
             --dot-accent: #6E8FE7;
         }
 
+        /* Studio Theme Override -- restrained, high-contrast, Apple/Claude Code inspired.
+           Same claymorphic shadow mechanism as the other themes, tuned much flatter
+           (tighter shadow spread, lower contrast between shadow-dark/light) for a
+           cleaner, quieter surface, with a single warm neutral accent color. */
+        [data-theme="studio"] {
+            --bg-color: #F5F5F7;
+            --card-bg: #FFFFFF;
+            --shadow-dark: #E2E2E5;
+            --shadow-light: #FFFFFF;
+            --text-main: #1D1D1F;
+            --text-sub: #6E6E73;
+            --dot-status: #34C759;
+            --dot-accent: #C96442;
+            --shadow-inset-dark: rgba(0, 0, 0, 0.035);
+            --shadow-inset-light: rgba(255, 255, 255, 0.7);
+        }
+
         /* Dark Clay Theme Override */
         [data-theme="dark"] {
             --bg-color: #1A1A22;
@@ -1051,20 +1068,20 @@
             <aside class="sidebar">
                 <!-- Workspace Context target path selector -->
                 <div class="sidebar-section">
-                    <div class="sidebar-title">Workspace Context</div>
-                    <input type="text" id="target-path-input" class="clay-input-sub" placeholder="e.g. src/main.py" autocomplete="off" />
-                    
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0;">
-                        <button class="focus-chip" onclick="toggleFocusChip(this, 'security')" data-checked="false" style="padding: 3px 6px; font-size: 9.5px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.06); background: var(--bg-color); color: var(--text-main); cursor: pointer; transition: all 0.2s;">🛡️ Security</button>
-                        <button class="focus-chip" onclick="toggleFocusChip(this, 'performance')" data-checked="false" style="padding: 3px 6px; font-size: 9.5px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.06); background: var(--bg-color); color: var(--text-main); cursor: pointer; transition: all 0.2s;">⚡ Performance</button>
-                        <button class="focus-chip" onclick="toggleFocusChip(this, 'accessibility')" data-checked="false" style="padding: 3px 6px; font-size: 9.5px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.06); background: var(--bg-color); color: var(--text-main); cursor: pointer; transition: all 0.2s;">♿ Accessibility</button>
-                        <button class="focus-chip" onclick="toggleFocusChip(this, 'style_lint')" data-checked="false" style="padding: 3px 6px; font-size: 9.5px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.06); background: var(--bg-color); color: var(--text-main); cursor: pointer; transition: all 0.2s;">📝 Style/Lint</button>
+                    <div class="sidebar-title" title="The file or folder sAI focuses on for your next request. Leave empty for a general question.">Workspace Context</div>
+                    <input type="text" id="target-path-input" class="clay-input-sub" placeholder="e.g. src/main.py" autocomplete="off" title="Path sAI should focus on, relative to your project. Leave blank to just ask a question." />
+
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0;" title="Optional: narrow the Review action below to one specific concern.">
+                        <button class="focus-chip" onclick="toggleFocusChip(this, 'security')" data-checked="false" style="padding: 3px 6px; font-size: 9.5px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.06); background: var(--bg-color); color: var(--text-main); cursor: pointer; transition: all 0.2s;" title="Limit Review to security issues (vulnerabilities, secrets, unsafe input handling).">🛡️ Security</button>
+                        <button class="focus-chip" onclick="toggleFocusChip(this, 'performance')" data-checked="false" style="padding: 3px 6px; font-size: 9.5px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.06); background: var(--bg-color); color: var(--text-main); cursor: pointer; transition: all 0.2s;" title="Limit Review to performance issues (slow algorithms, unnecessary work).">⚡ Performance</button>
+                        <button class="focus-chip" onclick="toggleFocusChip(this, 'accessibility')" data-checked="false" style="padding: 3px 6px; font-size: 9.5px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.06); background: var(--bg-color); color: var(--text-main); cursor: pointer; transition: all 0.2s;" title="Limit Review to accessibility issues (contrast, focus states, ARIA).">♿ Accessibility</button>
+                        <button class="focus-chip" onclick="toggleFocusChip(this, 'style_lint')" data-checked="false" style="padding: 3px 6px; font-size: 9.5px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.06); background: var(--bg-color); color: var(--text-main); cursor: pointer; transition: all 0.2s;" title="Limit Review to style and lint issues (formatting, naming, dead code).">📝 Style/Lint</button>
                     </div>
 
                     <div class="action-row">
-                        <button class="clay-btn-sm" onclick="onContextAction('create')">Create</button>
-                        <button class="clay-btn-sm" onclick="onContextAction('review')">Review</button>
-                        <button class="clay-btn-sm" onclick="onContextAction('edit')">Edit</button>
+                        <button class="clay-btn-sm" onclick="onContextAction('create')" title="Ask sAI to build something new at the path above.">Create</button>
+                        <button class="clay-btn-sm" onclick="onContextAction('review')" title="Ask sAI to audit the file/folder above for issues (see the chips above to narrow the focus).">Review</button>
+                        <button class="clay-btn-sm" onclick="onContextAction('edit')" title="Ask sAI to modify the existing file/folder above.">Edit</button>
                     </div>
                     <div id="context-presets-container" style="display: none; margin-top: 10px; flex-direction: column; gap: 6px; background: rgba(0,0,0,0.03); border-radius: 12px; padding: 10px; border: 1px dashed rgba(0,0,0,0.05);">
                         <div style="font-size: 9px; font-weight: bold; opacity: 0.6; text-transform: uppercase;">Boilerplate Presets</div>
@@ -1078,9 +1095,9 @@
                     <input type="text" id="tree-search-input" class="clay-input-sub" style="font-size: 10.5px; padding: 5px 8px; margin-bottom: 6px;" placeholder="Filter files..." oninput="filterFileTree(this.value)">
                     
                     <!-- Time-Travel Slider panel -->
-                    <div id="time-travel-panel" style="background: rgba(102, 252, 241, 0.03); border: 1px solid rgba(102, 252, 241, 0.1); border-radius: 12px; padding: 10px; margin-bottom: 8px; font-family:'Outfit', sans-serif; text-align: left;">
+                    <div id="time-travel-panel" style="background: rgba(102, 252, 241, 0.03); border: 1px solid rgba(102, 252, 241, 0.1); border-radius: 12px; padding: 10px; margin-bottom: 8px; font-family:'Outfit', sans-serif; text-align: left;" title="Drag left to preview an earlier version of the files sAI has edited this session, or to restore one. Becomes active once sAI makes its first edit.">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
-                            <span style="font-size: 9.5px; font-weight: bold; color: var(--accent-cyan); text-transform: uppercase;">🕰️ Time-Travel Rollback:</span>
+                            <span style="font-size: 9.5px; font-weight: bold; color: var(--accent-cyan); text-transform: uppercase;">🕰️ Undo History:</span>
                             <span id="time-travel-label" style="font-size: 8.5px; opacity:0.6; font-family:monospace;">live state</span>
                         </div>
                         <input type="range" id="time-travel-slider" min="0" max="0" value="0" style="width:100%; cursor:pointer; accent-color:var(--accent-cyan);" onchange="handleTimeTravelScrub(this.value)">
@@ -1184,7 +1201,7 @@
                     <div class="card-dot"></div>
                     <div class="card-body">
                         <div class="card-title">sAI is warmed up.</div>
-                        <div class="card-text">Type a command below, or press one of the chips on the left.</div>
+                        <div class="card-text">Just type a question below to get started. For work on a specific file or folder, set it under "Workspace Context" on the left, then use Create/Review/Edit. Hover any control for what it does.</div>
                         <div class="card-meta">sAI Kernel v1.5 • Connected</div>
                     </div>
                 </div>
@@ -1387,47 +1404,52 @@
             <!-- Column 4: Memory & Persistent Graph Indexer -->
             <aside class="inspector-panel" id="memory-display" style="width: 260px; display: flex; flex-direction: column; height: 100%; overflow: hidden; padding-top: 14px;">
                 <div class="sidebar-section" style="display: flex; flex-direction: column; overflow: hidden; height: 100%;">
-                    <div class="inspector-title" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <div class="inspector-title" style="display: flex; justify-content: space-between; align-items: center; width: 100%;" title="What sAI remembers between turns and sessions.">
                         <span>sAI Memory Indexer</span>
-                        <button class="tree-action-btn" onclick="clearAllMemory()" title="Clear all memory" style="background-color: rgba(255, 107, 107, 0.15); color: #ff6b6b; font-weight: bold; border-radius: 6px; padding: 2px 8px; font-size: 10px;">Clear All</button>
+                        <button class="tree-action-btn" onclick="clearAllMemory()" title="Erase everything sAI remembers (facts + decisions). Cannot be undone." style="background-color: rgba(255, 107, 107, 0.15); color: #ff6b6b; font-weight: bold; border-radius: 6px; padding: 2px 8px; font-size: 10px;">Clear All</button>
                     </div>
-                    
-                    <!-- Quick Toggle switches -->
+
+                    <!-- Quick Toggle switches (collapsed by default -- most people won't need these on day one) -->
                     <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); padding: 10px; border-radius: 12px; display: flex; flex-direction: column; gap: 8px; margin-top: 12px;">
-                        <div style="font-size: 10px; font-weight: bold; opacity: 0.6; text-transform: uppercase;">Realtime Modes</div>
+                        <div onclick="toggleAdvancedModesPanel()" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: bold; opacity: 0.6; text-transform: uppercase;" title="Advanced runtime toggles -- most people won't need to change these.">
+                            <span>Advanced Modes</span>
+                            <span id="advanced-modes-arrow">▶</span>
+                        </div>
+                        <div id="advanced-modes-content" style="display: none; flex-direction: column; gap: 8px;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <label style="font-size: 11px; font-weight: 600; opacity: 0.8; cursor: pointer;" for="sidebar-aider-mode">⚡ Aider Mode</label>
+                            <label style="font-size: 11px; font-weight: 600; opacity: 0.8; cursor: pointer;" for="sidebar-aider-mode" title="Edit files with small, targeted search-and-replace patches instead of rewriting the whole file. Faster and safer for small changes.">⚡ Aider Mode</label>
                             <label class="clay-switch">
                                 <input type="checkbox" id="sidebar-aider-mode" onchange="toggleSidebarMode('aider')" checked />
                                 <span class="clay-slider"></span>
                             </label>
                         </div>
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <label style="font-size: 11px; font-weight: 600; opacity: 0.8; cursor: pointer;" for="sidebar-graphiti-mode">🧠 Graphiti Memory</label>
+                            <label style="font-size: 11px; font-weight: 600; opacity: 0.8; cursor: pointer;" for="sidebar-graphiti-mode" title="Let sAI save facts and decisions here (below) and recall them in future sessions on this project.">🧠 Graphiti Memory</label>
                             <label class="clay-switch">
                                 <input type="checkbox" id="sidebar-graphiti-mode" onchange="toggleSidebarMode('graphiti')" checked />
                                 <span class="clay-slider"></span>
                             </label>
                         </div>
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <label style="font-size: 11px; font-weight: 600; opacity: 0.8; cursor: pointer;" for="sidebar-reasoning-mode">💭 Deep Reasoning Feed</label>
+                            <label style="font-size: 11px; font-weight: 600; opacity: 0.8; cursor: pointer;" for="sidebar-reasoning-mode" title="Show each agent's step-by-step reasoning on its card, not just the summary. Useful for debugging why sAI made a choice.">💭 Deep Reasoning Feed</label>
                             <label class="clay-switch">
                                 <input type="checkbox" id="sidebar-reasoning-mode" onchange="toggleReasoningFeedVisibility()" checked />
                                 <span class="clay-slider"></span>
                             </label>
                         </div>
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <label style="font-size: 11px; font-weight: 600; opacity: 0.8; cursor: pointer;" for="sidebar-docker-mode">🐳 Docker Sandbox</label>
+                            <label style="font-size: 11px; font-weight: 600; opacity: 0.8; cursor: pointer;" for="sidebar-docker-mode" title="Run shell/script commands inside an isolated Docker container instead of directly on your machine. Requires Docker to be installed and running.">🐳 Docker Sandbox</label>
                             <label class="clay-switch">
                                 <input type="checkbox" id="sidebar-docker-mode" onchange="toggleSidebarMode('docker')" />
                                 <span class="clay-slider"></span>
                             </label>
                         </div>
+                        </div>
                     </div>
 
                     <!-- Facts List -->
                     <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden; margin-top: 14px;">
-                        <div style="font-size: 10.5px; font-weight: bold; opacity: 0.7; margin-bottom: 6px;">PERSISTENT FACTS</div>
+                        <div style="font-size: 10.5px; font-weight: bold; opacity: 0.7; margin-bottom: 6px;" title="Things sAI has learned and will remember in future sessions on this project.">Saved Facts</div>
                         <div id="memory-facts-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px;">
                             <div style="opacity: 0.5; font-size: 10.5px; text-align: center; margin-top: 20px;">No facts recorded.</div>
                         </div>
@@ -1435,7 +1457,7 @@
 
                     <!-- Decisions List -->
                     <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden; margin-top: 14px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px;">
-                        <div style="font-size: 10.5px; font-weight: bold; opacity: 0.7; margin-bottom: 6px;">PERSISTENT DECISIONS</div>
+                        <div style="font-size: 10.5px; font-weight: bold; opacity: 0.7; margin-bottom: 6px;" title="Design/implementation choices sAI is committing to and will stay consistent with going forward.">Saved Decisions</div>
                         <div id="memory-decisions-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px;">
                             <div style="opacity: 0.5; font-size: 10.5px; text-align: center; margin-top: 20px;">No decisions recorded.</div>
                         </div>
@@ -1456,7 +1478,7 @@
             <input type="text" class="input-field" id="cmd-input" placeholder="type a command, press enter..." autocomplete="off" style="padding-right: 180px;" />
             
             <!-- Fast Chat Toggler -->
-            <div class="fast-chat-container" style="position: absolute; right: 80px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 8px; z-index: 10;">
+            <div class="fast-chat-container" style="position: absolute; right: 80px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 8px; z-index: 10;" title="Skip sAI's full multi-agent planning pipeline and answer with a single agent instead. Faster for quick, narrow requests; off is better for anything that needs planning across multiple concerns.">
                 <label class="fast-chat-switch" style="position: relative; display: inline-block; width: 44px; height: 22px; margin: 0;">
                     <input type="checkbox" id="fast-chat-toggle" style="opacity: 0; width: 0; height: 0;" />
                     <span class="slider" style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--card-bg); border-radius: 34px; box-shadow: inset 1px 1px 2px var(--shadow-dark), inset -1px -1px 2px var(--shadow-light); transition: 0.3s;"></span>
@@ -1499,7 +1521,7 @@
         const statusLight = document.getElementById("status-light");
         
         let currentThemeIndex = 0;
-        const themes = ["sand", "mint", "lavender", "dark"];
+        const themes = ["sand", "mint", "lavender", "dark", "studio"];
         let isTerminalMaximized = false;
 
         const techStackBoilerplates = {
@@ -1638,10 +1660,16 @@
 
         // Tab Selection pressed effects
         let activeSession = "session one";
+        // Live-streaming cursor + dedup guard so agent cards streamed in live via
+        // /api/activity/stream are never printed a second time by /api/run's final
+        // batch response.
+        let activityLogCursor = 0;
+        const printedCardKeys = new Set();
+        let seenAgentsThisRun = [];
         let sessionLogs = {
             "session one": [{
                 title: "sAI is warmed up.",
-                text: "Type a command below, or press one of the chips on the left.",
+                text: "Just type a question below to get started. For work on a specific file or folder, set it under \"Workspace Context\" on the left, then use Create/Review/Edit. Hover any control for what it does.",
                 eventData: null
             }]
         };
@@ -1733,10 +1761,10 @@
                     document.getElementById("inspector-details").style.flexDirection = "column";
                     document.getElementById("inspector-details").style.gap = "18px";
                     
-                    document.getElementById("inspector-agent-name").innerText = title;
+                    document.getElementById("inspector-agent-name").innerText = formatAgentName(title);
                     document.getElementById("inspector-confidence").innerText = card.dataset.confidence;
                     document.getElementById("inspector-reasoning").innerText = card.dataset.reasoning;
-                    
+
                     typeWriter(document.getElementById("inspector-output"), card.dataset.content, 8);
                 };
             } else {
@@ -2691,9 +2719,22 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
             const haltBtn = document.getElementById("halt-agent-btn");
             
             activityPollInterval = setInterval(() => {
-                fetch("/api/activity/stream")
+                fetch(`/api/activity/stream?session_id=${encodeURIComponent(activeSession)}&since=${activityLogCursor}`)
                 .then(res => res.json())
                 .then(data => {
+                    // Render newly-completed agent turns live, as they happen,
+                    // instead of waiting for /api/run's final batched response.
+                    if (Array.isArray(data.log)) {
+                        data.log.forEach(entry => {
+                            if (entry.type === "agent_finished") {
+                                printCardOnce(entry.agent, entry.summary, entry);
+                            }
+                        });
+                    }
+                    if (typeof data.log_cursor === "number") {
+                        activityLogCursor = data.log_cursor;
+                    }
+
                     document.querySelectorAll(".tree-node-content").forEach(el => {
                         el.classList.remove("file-flash-read", "file-flash-write", "file-flash-patch");
                     });
@@ -2711,36 +2752,20 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
                     if (progressHeader) progressHeader.style.display = "flex";
                     if (haltBtn) haltBtn.style.display = "inline-block";
                     
-                    // Update task checklist indicators
-                    const agent = data.agent ? data.agent.toLowerCase() : "";
-                    let plannerState = "[ ] planner";
-                    let archState = "[ ] architect";
-                    let coderState = "[ ] coder";
-                    let revState = "[ ] reviewer";
-                    
-                    if (agent.includes("planner")) {
-                        plannerState = "[/] planner";
-                    } else if (agent.includes("architect")) {
-                        plannerState = "[x] planner";
-                        archState = "[/] architect";
-                    } else if (agent.includes("coder")) {
-                        plannerState = "[x] planner";
-                        archState = "[x] architect";
-                        coderState = "[/] coder";
-                    } else if (agent.includes("reviewer")) {
-                        plannerState = "[x] planner";
-                        archState = "[x] architect";
-                        coderState = "[x] coder";
-                        revState = "[/] reviewer";
+                    // Update task checklist indicators -- built dynamically from
+                    // whichever agents have actually run this turn (the roster is no
+                    // longer a fixed 4 agents), rather than a hardcoded list.
+                    const agent = data.agent || "";
+                    if (agent && !seenAgentsThisRun.includes(agent)) {
+                        seenAgentsThisRun.push(agent);
                     }
-                    
+
                     if (progressChecklist) {
-                        progressChecklist.innerHTML = `
-                            <span style="opacity: ${plannerState.includes('[ ]') ? '0.4' : '0.9'}; font-weight: ${plannerState.includes('[/]') ? '600' : '400'};">${plannerState}</span>
-                            <span style="opacity: ${archState.includes('[ ]') ? '0.4' : '0.9'}; font-weight: ${archState.includes('[/]') ? '600' : '400'};">${archState}</span>
-                            <span style="opacity: ${coderState.includes('[ ]') ? '0.4' : '0.9'}; font-weight: ${coderState.includes('[/]') ? '600' : '400'};">${coderState}</span>
-                            <span style="opacity: ${revState.includes('[ ]') ? '0.4' : '0.9'}; font-weight: ${revState.includes('[/]') ? '600' : '400'};">${revState}</span>
-                        `;
+                        progressChecklist.innerHTML = seenAgentsThisRun.map(name => {
+                            const isActive = name === agent;
+                            const marker = isActive ? "[/]" : "[x]";
+                            return `<span style="opacity: ${isActive ? '0.9' : '0.6'}; font-weight: ${isActive ? '600' : '400'};">${marker} ${formatAgentName(name).toLowerCase()}</span>`;
+                        }).join(" ");
                     }
                     
                     // Update live tokens counter
@@ -3088,6 +3113,28 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
             });
         }
 
+        function printCardOnce(title, text, eventData = null) {
+            // Agent turns can arrive twice: once streamed live via the activity poll,
+            // once more in /api/run's final batched response. Key on agent+summary so
+            // each real turn still renders exactly once.
+            const key = `${title}::${text}`;
+            if (printedCardKeys.has(key)) return null;
+            printedCardKeys.add(key);
+            return printCard(title, text, eventData);
+        }
+
+        // Agent names are registered in camelCase for a few multi-word roles
+        // (e.g. "UIDesigner", "DataScientist") -- this is for display only, never
+        // for matching/comparing against the raw name.
+        const AGENT_NAME_OVERRIDES = { "DevOps": "DevOps" };
+        function formatAgentName(name) {
+            if (!name) return name;
+            if (AGENT_NAME_OVERRIDES[name]) return AGENT_NAME_OVERRIDES[name];
+            return name
+                .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+                .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2');
+        }
+
         function printCard(title, text, eventData = null) {
             const card = document.createElement("div");
             const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -3118,10 +3165,10 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
                     document.getElementById("inspector-details").style.flexDirection = "column";
                     document.getElementById("inspector-details").style.gap = "18px";
                     
-                    document.getElementById("inspector-agent-name").innerText = title;
+                    document.getElementById("inspector-agent-name").innerText = formatAgentName(title);
                     document.getElementById("inspector-confidence").innerText = card.dataset.confidence;
                     document.getElementById("inspector-reasoning").innerText = card.dataset.reasoning;
-                    
+
                     typeWriter(document.getElementById("inspector-output"), card.dataset.content, 8);
                 };
             } else {
@@ -3131,14 +3178,20 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
             // Assign soft premium colors depending on agent identity
             let agentColor = "#E7886F"; // default accent
             const nameLower = title.toLowerCase();
-            if (nameLower.includes("planner")) {
+            if (nameLower.includes("planner") || nameLower.includes("projectmanager")) {
                 agentColor = "#D4A373"; // Bronze Gold
-            } else if (nameLower.includes("architect")) {
+            } else if (nameLower.includes("architect") || nameLower.includes("uidesigner")) {
                 agentColor = "#5FA8D3"; // Sky Blue
-            } else if (nameLower.includes("coder")) {
+            } else if (nameLower.includes("coder") || nameLower.includes("database") || nameLower.includes("devops")) {
                 agentColor = "#82C3A6"; // Mint Green
-            } else if (nameLower.includes("reviewer")) {
+            } else if (nameLower.includes("reviewer") || nameLower.includes("security") || nameLower.includes("debugger")) {
                 agentColor = "#E7886F"; // Salmon Red
+            } else if (nameLower.includes("researcher") || nameLower.includes("datascientist")) {
+                agentColor = "#9B8FD9"; // Lavender
+            } else if (nameLower.includes("testing") || nameLower.includes("performance")) {
+                agentColor = "#E0B84D"; // Amber
+            } else if (nameLower.includes("documentation") || nameLower.includes("legalfinance")) {
+                agentColor = "#6FAEE7"; // Cool Blue
             } else if (nameLower.includes("system")) {
                 agentColor = "#7A7870"; // Cool Gray
             }
@@ -3151,7 +3204,7 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
             card.innerHTML = `
                 <div class="card-dot" style="background-color: ${agentColor}; box-shadow: 0 0 8px ${agentColor};"></div>
                 <div class="card-body">
-                    <div class="card-title" style="color: ${agentColor}; font-weight: 700; font-size: 13.5px;">${title}</div>
+                    <div class="card-title" style="color: ${agentColor}; font-weight: 700; font-size: 13.5px;">${formatAgentName(title)}</div>
                     <div class="card-text"></div>
                     ${showReasoning ? `
                     <div class="card-reasoning-block" style="display: ${isVerbose ? 'block' : 'none'}; margin-top: 10px; background: rgba(0,0,0,0.02); border-radius: 8px; padding: 10px; font-size: 10.5px; opacity: 0.95; font-family: 'Outfit', sans-serif; line-height: 1.4; border: 1px dashed ${agentColor}80; text-align: left;">
@@ -3217,7 +3270,9 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
         function runLiveOrchestrator(goal) {
             pendingGoal = goal;
             printCard("sAI Kernel", `Forwarding goal to sAI Multi-Agent loop...\nGoal: "${goal}"`);
-            
+
+            activityLogCursor = 0;
+            seenAgentsThisRun = [];
             startLiveActivityTracker();
             
             const techStack = document.getElementById("tech-stack-select").value;
@@ -3255,8 +3310,8 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
                 if (data.status === "success") {
                     if (data.events && data.events.length > 0) {
                         data.events.forEach(evt => {
-                            const card = printCard(evt.agent, evt.summary, evt);
-                            if (evt.agent === "Terminal") {
+                            const card = printCardOnce(evt.agent, evt.summary, evt);
+                            if (evt.agent === "Terminal" && card) {
                                 startTerminalOutputPolling(card);
                             }
                         });
@@ -3369,6 +3424,18 @@ Configured with dynamic ReAct execution planning, path-sandboxed shell validatio
         }
 
         /* Git Integration functions */
+        function toggleAdvancedModesPanel() {
+            const panel = document.getElementById("advanced-modes-content");
+            const arrow = document.getElementById("advanced-modes-arrow");
+            if (panel.style.display === "none") {
+                panel.style.display = "flex";
+                arrow.innerText = "▼";
+            } else {
+                panel.style.display = "none";
+                arrow.innerText = "▶";
+            }
+        }
+
         function toggleGitPanel() {
             const panel = document.getElementById("git-panel-content");
             const arrow = document.getElementById("git-toggle-arrow");

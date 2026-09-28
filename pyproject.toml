@@ -29,7 +29,7 @@ dependencies = [
     "typer",
     "anyio",
     "aiofiles",
-    "duckduckgo-search",
+    "ddgs",
     "GitPython",
     "pypdf",
     "python-docx",
@@ -51,6 +51,7 @@ dependencies = [
     "tqdm",
     "watchdog",
     "psutil",
+    "sympy",
 ]
 
 [project.optional-dependencies]
@@ -63,4 +64,19 @@ dev = [
 sai = "sai.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["sai"]
+packages = [
+    "sai",
+    "agents",
+    "app",
+    "core",
+    "execution",
+    "jev",
+    "llm",
+    "repository",
+    "tools",
+    "ui",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

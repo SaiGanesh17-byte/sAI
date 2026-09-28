@@ -30,11 +30,8 @@ def main():
         orchestrator.run(task)
         return
     if "--cli" in sys.argv or "-c" in sys.argv:
-        print("\n=== sAI Multi-Agent Engine (Console CLI) ===\n")
-        goal = input("You: ")
-        task = Task(goal=goal)
-        orchestrator = Orchestrator()
-        orchestrator.run(task)
+        from app.repl import SaiRepl
+        SaiRepl().run()
         return
 
     # Default to running Web UI
@@ -48,11 +45,29 @@ def main():
         from core.events import event_bus, Event, EventType
         from execution.permissions import PermissionRequestRequired
 
+        import os
         PORT = 8000
+        if "--port" in sys.argv:
+            try:
+                PORT = int(sys.argv[sys.argv.index("--port") + 1])
+            except (ValueError, IndexError):
+                print("Error: --port requires a numeric value, e.g. --port 8010")
+                sys.exit(1)
+        else:
+            env_port = os.getenv("SAI_WEB_PORT")
+            if env_port:
+                try:
+                    PORT = int(env_port)
+                except ValueError:
+                    pass
 
         class ClaylineHTTPServer(BaseHTTPRequestHandler):
             SESSION_CONVERSATIONS = {}
             SESSION_WAITING = {}
+            # Per-session ring buffer of live agent/tool activity, drained incrementally
+            # by /api/activity/stream so the UI can render turns as they happen instead
+            # of waiting for /api/run's single blocking response.
+            SESSION_ACTIVITY_LOG = {}
 
             def log_message(self, format, *args):
                 return  # Suppress server request stdout logging to keep terminal clean
@@ -64,18 +79,30 @@ def main():
                     self.end_headers()
                     html_path = Path(__file__).resolve().parent.parent / "ui" / "clayline-terminal.html"
                     self.wfile.write(html_path.read_bytes())
-                elif self.path == "/api/activity/stream":
+                elif self.path.startswith("/api/activity/stream"):
                     try:
+                        from urllib.parse import urlparse, parse_qs
                         from core.security import get_current_activity
                         from llm.tracker import token_tracker
-                        
+
+                        query = parse_qs(urlparse(self.path).query)
+                        session_id = query.get("session_id", ["default_session"])[0]
+                        try:
+                            since = int(query.get("since", ["0"])[0])
+                        except ValueError:
+                            since = 0
+
                         payload = get_current_activity()
                         payload["input_tokens"] = token_tracker.input_tokens
                         payload["output_tokens"] = token_tracker.output_tokens
                         payload["calls_count"] = token_tracker.calls_count
                         payload["elapsed_time"] = token_tracker.elapsed_time
                         payload["speed"] = token_tracker.speed
-                        
+
+                        log = self.SESSION_ACTIVITY_LOG.get(session_id, [])
+                        payload["log"] = log[since:] if since < len(log) else []
+                        payload["log_cursor"] = len(log)
+
                         self.send_response(200)
                         self.send_header("Content-type", "application/json")
                         self.end_headers()
@@ -93,13 +120,11 @@ def main():
                         from core.settings import load_settings
                         settings = load_settings()
                         safe_settings = dict(settings)
-                        if safe_settings.get("nvidia_key"):
-                            key = safe_settings["nvidia_key"]
-                            safe_settings["nvidia_key"] = key[:6] + "..." + key[-4:] if len(key) > 10 else "..."
-                        if safe_settings.get("openai_key"):
-                            key = safe_settings["openai_key"]
-                            safe_settings["openai_key"] = key[:6] + "..." + key[-4:] if len(key) > 10 else "..."
-                            
+                        for secret_key in ("nvidia_key", "openai_key", "openrouter_key"):
+                            if safe_settings.get(secret_key):
+                                key = safe_settings[secret_key]
+                                safe_settings[secret_key] = key[:6] + "..." + key[-4:] if len(key) > 10 else "..."
+
                         self.send_response(200)
                         self.send_header("Content-type", "application/json")
                         self.end_headers()
@@ -195,6 +220,159 @@ def main():
                         self.wfile.write(json.dumps({
                             "status": "success",
                             "symbols": symbols
+                        }).encode('utf-8'))
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header("Content-type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "status": "error",
+                            "message": str(e)
+                        }).encode('utf-8'))
+                elif self.path.startswith("/api/git/diff"):
+                    try:
+                        from urllib.parse import urlparse, parse_qs
+                        query = parse_qs(urlparse(self.path).query)
+                        path_str = query.get("path", [""])[0].strip()
+
+                        import subprocess
+                        cwd = "/Users/saiganeshongolu/sAI"
+
+                        status_res = subprocess.run(["git", "status", "--porcelain", path_str], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        is_untracked = "??" in status_res.stdout
+
+                        if is_untracked:
+                            cmd = ["git", "diff", "--no-index", "/dev/null", path_str]
+                        else:
+                            cmd = ["git", "diff", "--", path_str]
+
+                        res = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                        diff_text = res.stdout
+
+                        self.send_response(200)
+                        self.send_header("Content-type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "status": "success",
+                            "diff": diff_text
+                        }).encode('utf-8'))
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header("Content-type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "status": "error",
+                            "message": str(e)
+                        }).encode('utf-8'))
+                elif self.path.startswith("/api/workspace/search"):
+                    try:
+                        from urllib.parse import urlparse, parse_qs
+                        query_params = parse_qs(urlparse(self.path).query)
+                        query_str = query_params.get("query", [""])[0].strip()
+
+                        from core.security import get_current_workspace
+                        target_dir = get_current_workspace()
+
+                        results = []
+                        if query_str:
+                            import math
+                            query_terms = query_str.lower().split()
+
+                            files = [p for p in target_dir.rglob("*") if p.is_file() and not p.name.startswith(".") and ".sai" not in p.parts and "venv" not in p.parts and "node_modules" not in p.parts]
+
+                            for f_path in files:
+                                try:
+                                    content = f_path.read_text(encoding='utf-8', errors='ignore')
+                                    content_lower = content.lower()
+                                    if any(term in content_lower for term in query_terms):
+                                        score = 0.0
+                                        for term in query_terms:
+                                            tf = content_lower.count(term)
+                                            if tf > 0:
+                                                score += (1.0 + math.log(tf))
+                                        if score > 0:
+                                            idx = content_lower.find(query_terms[0])
+                                            snippet = content[max(0, idx - 40):min(len(content), idx + 80)].replace("\n", " ").strip()
+                                            results.append({
+                                                "name": f_path.name,
+                                                "path": str(f_path.relative_to(target_dir)),
+                                                "snippet": f"...{snippet}...",
+                                                "score": round(score, 2)
+                                            })
+                                except Exception:
+                                    pass
+
+                            results = sorted(results, key=lambda x: x["score"], reverse=True)[:8]
+
+                        self.send_response(200)
+                        self.send_header("Content-type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "status": "success",
+                            "results": results
+                        }).encode('utf-8'))
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header("Content-type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "status": "error",
+                            "message": str(e)
+                        }).encode('utf-8'))
+                elif self.path == "/api/terminal/stream":
+                    try:
+                        from tools.terminal import async_process_manager
+                        new_output = async_process_manager.get_new_output()
+                        self.send_response(200)
+                        self.send_header("Content-type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "status": "success",
+                            "lines": new_output,
+                            "is_running": async_process_manager.is_running
+                        }).encode('utf-8'))
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header("Content-type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "status": "error",
+                            "message": str(e)
+                        }).encode('utf-8'))
+                elif self.path == "/api/diagnostics/resources":
+                    try:
+                        import subprocess
+                        import random
+
+                        cpu_percent = 0.0
+                        mem_percent = 0.0
+
+                        try:
+                            res = subprocess.run(["ps", "-A", "-o", "%cpu,%mem"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=2.0)
+                            lines = res.stdout.strip().split("\n")[1:]
+                            cpu_total = 0.0
+                            mem_total = 0.0
+                            for line in lines:
+                                parts = line.strip().split()
+                                if len(parts) >= 2:
+                                    try:
+                                        cpu_total += float(parts[0])
+                                        mem_total += float(parts[1])
+                                    except ValueError:
+                                        pass
+                            cpu_percent = min(100.0, cpu_total)
+                            mem_percent = min(100.0, mem_total)
+                        except Exception:
+                            cpu_percent = round(random.uniform(5.0, 15.0), 1)
+                            mem_percent = round(random.uniform(20.0, 35.0), 1)
+
+                        self.send_response(200)
+                        self.send_header("Content-type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "status": "success",
+                            "cpu": round(cpu_percent, 1),
+                            "memory": round(mem_percent, 1)
                         }).encode('utf-8'))
                     except Exception as e:
                         self.send_response(500)
@@ -321,7 +499,8 @@ def main():
                             self.SESSION_CONVERSATIONS[session_id] = []
                             
                         self.SESSION_WAITING[session_id] = False
-                        
+                        self.SESSION_ACTIVITY_LOG[session_id] = []
+
                         if session_id in self.SESSION_CONVERSATIONS:
                             for msg in self.SESSION_CONVERSATIONS[session_id]:
                                 task.context.conversation.add(msg)
@@ -554,18 +733,39 @@ def main():
                             if not content:
                                 content = getattr(msg, "content", "")
                                 
-                            captured_events.append({
+                            event_entry = {
                                 "agent": agent_name,
                                 "summary": summary,
                                 "reasoning": reasoning,
                                 "confidence": confidence,
                                 "content": content,
                                 "findings": findings
+                            }
+                            captured_events.append(event_entry)
+
+                            log = self.SESSION_ACTIVITY_LOG.setdefault(session_id, [])
+                            log.append({"type": "agent_finished", **event_entry})
+                            del log[:-200]  # cap growth
+
+                        def on_tool_started(event: Event):
+                            log = self.SESSION_ACTIVITY_LOG.setdefault(session_id, [])
+                            log.append({"type": "tool_started", "tool": event.data.get("tool", "")})
+                            del log[:-200]
+
+                        def on_tool_finished(event: Event):
+                            log = self.SESSION_ACTIVITY_LOG.setdefault(session_id, [])
+                            log.append({
+                                "type": "tool_finished",
+                                "tool": event.data.get("tool", ""),
+                                "success": event.data.get("success", True)
                             })
-                            
+                            del log[:-200]
+
                         # Subscribe to live finished events
                         event_bus.subscribe(EventType.AGENT_FINISHED, on_agent_finished)
-                        
+                        event_bus.subscribe(EventType.TOOL_STARTED, on_tool_started)
+                        event_bus.subscribe(EventType.TOOL_FINISHED, on_tool_finished)
+
                         try:
                             import core.security
                             core.security.CURRENT_SESSION_ID = session_id
@@ -625,7 +825,9 @@ def main():
                             }).encode('utf-8'))
                         finally:
                             event_bus.unsubscribe(EventType.AGENT_FINISHED, on_agent_finished)
-                            
+                            event_bus.unsubscribe(EventType.TOOL_STARTED, on_tool_started)
+                            event_bus.unsubscribe(EventType.TOOL_FINISHED, on_tool_finished)
+
                     except PermissionRequestRequired as preq:
                         if 'task' in locals():
                             self.SESSION_CONVERSATIONS[session_id] = list(task.context.conversation.all())
@@ -801,7 +1003,27 @@ def main():
                         content_length = int(self.headers['Content-Length'])
                         post_data = self.rfile.read(content_length)
                         data = json.loads(post_data.decode('utf-8'))
-                        
+
+                        # Two callers share this endpoint: the per-transaction Undo
+                        # button (sends transaction_id) and the inline-diff Reject
+                        # button (sends target_file). Dispatch on which is present --
+                        # a second `/api/workspace/revert` handler used to exist
+                        # further down for the transaction_id case and was dead code
+                        # (unreachable behind this one in the if/elif chain).
+                        if "transaction_id" in data:
+                            transaction_id = int(data.get("transaction_id", 0))
+                            from core.security import revert_transaction
+                            success, message = revert_transaction(transaction_id)
+
+                            self.send_response(200)
+                            self.send_header("Content-type", "application/json")
+                            self.end_headers()
+                            self.wfile.write(json.dumps({
+                                "status": "success" if success else "failed",
+                                "message": message
+                            }).encode('utf-8'))
+                            return
+
                         target_file = data.get("target_file")
                         if not target_file:
                             self.send_response(400)
@@ -970,27 +1192,6 @@ def main():
                             "message": str(e)
                         }).encode('utf-8'))
 
-                elif self.path == "/api/terminal/stream":
-                    try:
-                        from tools.terminal import async_process_manager
-                        new_output = async_process_manager.get_new_output()
-                        self.send_response(200)
-                        self.send_header("Content-type", "application/json")
-                        self.end_headers()
-                        self.wfile.write(json.dumps({
-                            "status": "success",
-                            "lines": new_output,
-                            "is_running": async_process_manager.is_running
-                        }).encode('utf-8'))
-                    except Exception as e:
-                        self.send_response(500)
-                        self.send_header("Content-type", "application/json")
-                        self.end_headers()
-                        self.wfile.write(json.dumps({
-                            "status": "error",
-                            "message": str(e)
-                        }).encode('utf-8'))
-                        
                 elif self.path == "/api/terminal/kill":
                     try:
                         from tools.terminal import async_process_manager
@@ -1078,32 +1279,6 @@ def main():
                         self.wfile.write(json.dumps({
                             "status": "success",
                             "transactions": history
-                        }).encode('utf-8'))
-                    except Exception as e:
-                        self.send_response(500)
-                        self.send_header("Content-type", "application/json")
-                        self.end_headers()
-                        self.wfile.write(json.dumps({
-                            "status": "error",
-                            "message": str(e)
-                        }).encode('utf-8'))
-
-                elif self.path == "/api/workspace/revert":
-                    try:
-                        content_length = int(self.headers['Content-Length'])
-                        post_data = self.rfile.read(content_length)
-                        data = json.loads(post_data.decode('utf-8'))
-                        
-                        transaction_id = int(data.get("transaction_id", 0))
-                        from core.security import revert_transaction
-                        success, message = revert_transaction(transaction_id)
-                        
-                        self.send_response(200)
-                        self.send_header("Content-type", "application/json")
-                        self.end_headers()
-                        self.wfile.write(json.dumps({
-                            "status": "success" if success else "failed",
-                            "message": message
                         }).encode('utf-8'))
                     except Exception as e:
                         self.send_response(500)
@@ -1227,144 +1402,6 @@ def main():
                         self.wfile.write(json.dumps({
                             "status": "success",
                             "branch": branch
-                        }).encode('utf-8'))
-                    except Exception as e:
-                        self.send_response(500)
-                        self.send_header("Content-type", "application/json")
-                        self.end_headers()
-                        self.wfile.write(json.dumps({
-                            "status": "error",
-                            "message": str(e)
-                        }).encode('utf-8'))
-
-                elif self.path.startswith("/api/git/diff"):
-                    try:
-                        from urllib.parse import urlparse, parse_qs
-                        query = parse_qs(urlparse(self.path).query)
-                        path_str = query.get("path", [""])[0].strip()
-                        
-                        import subprocess
-                        cwd = "/Users/saiganeshongolu/sAI"
-                        
-                        status_res = subprocess.run(["git", "status", "--porcelain", path_str], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                        is_untracked = "??" in status_res.stdout
-                        
-                        if is_untracked:
-                            cmd = ["git", "diff", "--no-index", "/dev/null", path_str]
-                        else:
-                            cmd = ["git", "diff", "--", path_str]
-                            
-                        res = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                        diff_text = res.stdout
-                        
-                        self.send_response(200)
-                        self.send_header("Content-type", "application/json")
-                        self.end_headers()
-                        self.wfile.write(json.dumps({
-                            "status": "success",
-                            "diff": diff_text
-                        }).encode('utf-8'))
-                    except Exception as e:
-                        self.send_response(500)
-                        self.send_header("Content-type", "application/json")
-                        self.end_headers()
-                        self.wfile.write(json.dumps({
-                            "status": "error",
-                            "message": str(e)
-                        }).encode('utf-8'))
-
-                elif self.path == "/api/diagnostics/resources":
-                    try:
-                        import subprocess
-                        import random
-                        
-                        cpu_percent = 0.0
-                        mem_percent = 0.0
-                        
-                        try:
-                            res = subprocess.run(["ps", "-A", "-o", "%cpu,%mem"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=2.0)
-                            lines = res.stdout.strip().split("\n")[1:]
-                            cpu_total = 0.0
-                            mem_total = 0.0
-                            for line in lines:
-                                parts = line.strip().split()
-                                if len(parts) >= 2:
-                                    try:
-                                        cpu_total += float(parts[0])
-                                        mem_total += float(parts[1])
-                                    except ValueError:
-                                        pass
-                            cpu_percent = min(100.0, cpu_total)
-                            mem_percent = min(100.0, mem_total)
-                        except Exception:
-                            # Dynamic realistic fallbacks if command fails or hangs
-                            cpu_percent = round(random.uniform(5.0, 15.0), 1)
-                            mem_percent = round(random.uniform(20.0, 35.0), 1)
-                            
-                        self.send_response(200)
-                        self.send_header("Content-type", "application/json")
-                        self.end_headers()
-                        self.wfile.write(json.dumps({
-                            "status": "success",
-                            "cpu": round(cpu_percent, 1),
-                            "memory": round(mem_percent, 1)
-                        }).encode('utf-8'))
-                    except Exception as e:
-                        self.send_response(500)
-                        self.send_header("Content-type", "application/json")
-                        self.end_headers()
-                        self.wfile.write(json.dumps({
-                            "status": "error",
-                            "message": str(e)
-                        }).encode('utf-8'))
-
-                elif self.path.startswith("/api/workspace/search"):
-                    try:
-                        from urllib.parse import urlparse, parse_qs
-                        query_params = parse_qs(urlparse(self.path).query)
-                        query_str = query_params.get("query", [""])[0].strip()
-                        
-                        from core.security import get_current_workspace
-                        target_dir = get_current_workspace()
-                        
-                        results = []
-                        if query_str:
-                            import math
-                            query_terms = query_str.lower().split()
-                            
-                            # Gather files
-                            files = [p for p in target_dir.rglob("*") if p.is_file() and not p.name.startswith(".") and ".sai" not in p.parts and "venv" not in p.parts and "node_modules" not in p.parts]
-                            
-                            for f_path in files:
-                                try:
-                                    content = f_path.read_text(encoding='utf-8', errors='ignore')
-                                    content_lower = content.lower()
-                                    if any(term in content_lower for term in query_terms):
-                                        score = 0.0
-                                        for term in query_terms:
-                                            tf = content_lower.count(term)
-                                            if tf > 0:
-                                                score += (1.0 + math.log(tf))
-                                        if score > 0:
-                                            idx = content_lower.find(query_terms[0])
-                                            snippet = content[max(0, idx - 40):min(len(content), idx + 80)].replace("\n", " ").strip()
-                                            results.append({
-                                                "name": f_path.name,
-                                                "path": str(f_path.relative_to(target_dir)),
-                                                "snippet": f"...{snippet}...",
-                                                "score": round(score, 2)
-                                            })
-                                except Exception:
-                                    pass
-                                    
-                            results = sorted(results, key=lambda x: x["score"], reverse=True)[:8]
-                            
-                        self.send_response(200)
-                        self.send_header("Content-type", "application/json")
-                        self.end_headers()
-                        self.wfile.write(json.dumps({
-                            "status": "success",
-                            "results": results
                         }).encode('utf-8'))
                     except Exception as e:
                         self.send_response(500)
@@ -1603,7 +1640,11 @@ def main():
                         new_openai = data.get("openai_key", "").strip()
                         if new_openai and not new_openai.endswith("..."):
                             current["openai_key"] = new_openai
-                            
+
+                        new_openrouter = data.get("openrouter_key", "").strip()
+                        if new_openrouter and not new_openrouter.endswith("..."):
+                            current["openrouter_key"] = new_openrouter
+
                         current["provider"] = data.get("provider", current["provider"])
                         current["ollama_url"] = data.get("ollama_url", current["ollama_url"])
                         current["coder_model"] = data.get("coder_model", current["coder_model"])
