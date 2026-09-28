@@ -2,63 +2,78 @@
 
 This document defines the roles, parameters, and configuration format for sAI agents.
 
-## Core Agents (Phase 1)
-* **Planner**: Deconstructs goals into manageable sub-tasks, assigns workflows to specific agents, and tracks task status.
-* **Architect**: Designs system layouts, reviews imports, sets directory structures, and ensures modular code patterns.
-* **Researcher**: Explores existing code libraries, reads external documentations, and searches the web to find answers.
-* **Coder**: Writes, modifies, and edits code based on the implementation plans and research findings.
-* **Reviewer**: Performs verification, syntax checks, checks lint errors, runs tests, and validates code output quality.
+## Core Agents
 
----
+All 24 are implemented today as YAML configs under `agents/configs/`, auto-discovered
+and registered by `agents/registry.py::AgentRegistry` — adding a new agent is just
+adding a new `*.yaml` file in that directory, no code change required. Listed in
+priority order (the order `Orchestrator` falls back to when an agent doesn't specify an
+explicit `next_agent`):
 
-## Future Agents
-* **Security**: Audits libraries and code changes for vulnerabilities or credential leaks.
-* **Database**: Optimizes queries, structures migrations, and manages schema updates.
-* **DevOps**: Configures CI/CD, manages Dockerfiles, and handles cloud deployment pipelines.
-* **Performance**: profiles execution time, measures RAM/CPU usage, and refactors slow functions.
-* **UI Designer**: Formats terminal visual frames, designs layouts, and mocks component interactions.
-* **Documentation**: Maintains READMEs, keeps docstrings current, and builds static docs.
-* **Testing**: Writes unit and integration tests automatically.
-* **Debugger**: Investigates run failures, parses stack traces, and isolates root-cause bugs.
-* **Data Scientist / ML Engineer**: Analyzes local data schemas, coordinates local dataset steps.
-* **Legal / Finance**: Audits open-source license compliance and monitors API token costs.
-* **Project Manager**: Manages delivery timelines and updates status dashboards.
+* **ProjectManager** (priority -1): Status/timeline summarization from conversation and working memory; hands new work off to Planner rather than planning itself.
+* **Planner** (priority 0): Deconstructs goals into manageable sub-tasks, assigns workflows to specific agents, and tracks task status.
+* **BusinessAnalyst** (priority 0.5): Turns a fuzzy goal into concrete user stories and acceptance criteria before design starts.
+* **Architect** (priority 1): Designs system layouts, reviews imports, sets directory structures, and ensures modular code patterns.
+* **Database** (priority 2): Schema design, query/index optimization, migrations.
+* **DataEngineer** (priority 2.5): ETL/data pipelines, ingestion validation, and data quality — distinct from DataScientist's modeling focus.
+* **UIDesigner** (priority 3): Visual/interaction design specs for what Coder will build.
+* **DataScientist** (priority 4): Narrow data-analysis/ML-specific work only.
+* **Researcher** (priority 5): Investigates the local codebase, its libraries, and installed dependencies — hands off to WebSearch for anything external.
+* **WebSearch** (priority 5.5): Internet research for docs/errors/version-specific facts, planner→executor→publisher style (inspired by gpt-researcher), always cites sources.
+* **Coder** (priority 6): Writes, modifies, and edits code based on implementation plans and research findings.
+* **APIIntegration** (priority 6.5): Wires up third-party APIs/SDKs/webhooks — auth, rate limits, retries, failure handling for systems you don't control.
+* **Mathematics** (priority 6.8): Exact algebra/calculus/linear-algebra/stats via the `math_solve` tool instead of LLM-guessed arithmetic; also does algorithmic Big-O analysis.
+* **Performance** (priority 7): Finds and fixes real, measured performance bottlenecks.
+* **Observability** (priority 7.5): Structured logging, alert thresholds, and incident runbooks — makes production failures diagnosable.
+* **Security** (priority 8): Whole-codebase dependency/secret audits (deeper than Reviewer's per-file pass).
+* **Testing** (priority 9): Writes automated unit/integration tests for what Coder implemented.
+* **QAAnalyst** (priority 9.5): Exploratory/manual testing, bug-report reproduction, and multi-persona (end-user / prod-support / stakeholder) evaluation of what automated tests miss.
+* **Debugger** (priority 10): Root-cause isolation from failures/stack traces, minimal targeted fixes.
+* **Reviewer** (priority 11): Performs verification, syntax checks, lint checks, runs tests, and validates code output quality.
+* **GitOps** (priority 11.5): Commit hygiene, changelogs, release notes, branch/merge strategy — distinct from DevOps's CI/CD focus.
+* **Documentation** (priority 12): Keeps README/docstrings/docs accurate to the real implementation.
+* **DevOps** (priority 13): CI/CD, Dockerfiles, deployment/environment configuration.
+* **LegalFinance** (priority 14): License compliance and LLM cost flags, advisory only.
+
+Role taxonomy is deliberately kept non-overlapping (one narrow purpose per agent, with
+an explicit "hand off rather than invent scope" rule in every prompt) rather than
+maximizing agent count for its own sake — modeled loosely on the fixed-role SOP pattern
+from [MetaGPT](https://github.com/foundationagents/metagpt) and
+[ChatDev](https://github.com/OpenBMB/ChatDev)'s role pipelines, and on
+[gpt-researcher](https://github.com/assafelovic/gpt-researcher)'s
+planner/executor/publisher pattern for the WebSearch agent specifically.
 
 ---
 
 ## Agent Configuration Format
 Every agent is defined and configured using a structured YAML specification. This makes it simple to customize agent personalities, modify prompts, swap models, or configure strict tool execution rules.
 
-### YAML Definition Example (`agents.yaml`)
-```yaml
-agents:
-  - name: "Planner"
-    role: "Task breakdown and workflow orchestrator"
-    model: "qwen3-coder-480b"
-    temperature: 0.1
-    priority: 1
-    system_prompt: |
-      You are the sAI Planner. Your job is to dissect complex requests into
-      a clear checklist of sub-tasks. You assign tasks to other specialized agents.
-    tool_permissions:
-      - "read_file"
-      - "search"
-    memory_permissions:
-      - "read_short_term"
-      - "write_short_term"
-      - "read_long_term"
+**Note**: `agents/registry.py::AgentRegistry.load()` currently only reads
+`name, priority, role, model, temperature, system_prompt` from each YAML file — it does
+not read or enforce `tool_permissions`/`memory_permissions`. If you add those keys today
+they're inert documentation, not an access-control mechanism.
 
-  - name: "Coder"
-    role: "Code writing and editor"
-    model: "deepseek-coder"
-    temperature: 0.2
-    priority: 3
-    system_prompt: |
-      You are the sAI Coder. You specialize in generating clean, correct, and modular code.
-    tool_permissions:
-      - "read_file"
-      - "write_file"
-      - "edit_file"
-    memory_permissions:
-      - "read_short_term"
+### YAML Definition Example (`agents/configs/example.yaml`)
+```yaml
+name: Planner
+priority: 0
+role: Task breakdown and workflow orchestrator
+model: openai/gpt-4o-mini
+temperature: 0.1
+system_prompt: |
+  You are the sAI Planner. Your job is to dissect complex requests into
+  a clear checklist of sub-tasks. You assign tasks to other specialized agents.
 ```
+
+A coding-heavy agent (Coder, Database, DataEngineer, APIIntegration, Testing, Debugger,
+DevOps, Performance, Observability, GitOps in the current roster) typically points
+`model:` at whatever `coder_model` is set to in `.sai/settings.json` (currently
+`qwen/qwen3-coder-plus` via OpenRouter); everything else typically points at
+`reasoner_model` (currently `openai/gpt-4o-mini`). Note that `agents/runtime.py` always
+passes each agent's own configured `model:` explicitly into `LLMRuntime.query()`, which
+overrides `ModelRouter`'s task-kind guess — so the YAML `model:` field is authoritative,
+not the agent's name.
+
+Also register any new tool the agent needs in `core/orchestrator.py::Orchestrator._init_kernel()`
+(see `MathTool` for the pattern) — `AgentRegistry` auto-discovers new agent YAML files,
+but tools still need an explicit `tool_reg.register(...)` call.

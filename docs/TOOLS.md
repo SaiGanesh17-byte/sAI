@@ -24,7 +24,15 @@ This document lists the local tool integrations available to sAI agents and expl
 * **Driver**: `GitPython`
 * **Purpose**: Reads git diffs, performs staging/commits, creates branches, and handles rollbacks.
 
-### 6. File Parsing (Comprehensive File Support)
+### 6. Mathematics
+* **Driver**: `sympy` (`tools/math.py::MathTool`, registered as `math_solve`)
+* **Purpose**: Exact symbolic/numeric computation — evaluate, simplify, factor/expand,
+  solve an equation for a variable, differentiate, integrate, and matrix
+  determinant/inverse/eigenvalues — plus basic descriptive statistics. Input is parsed
+  through `sympy.sympify`, never a bare `eval()`, so it can only build a math expression
+  tree, not execute arbitrary Python. Backs the `Mathematics` agent (see `docs/AGENTS.md`).
+
+### 7. File Parsing (Comprehensive File Support)
 Each format is routed through dedicated parsers for token efficiency and readability:
 * **Plain Text / Code**: `txt`, `py`, `js`, `ts`, `java`, `kt`, `go`, `rs`, `cpp`, `css`, `html`, `markdown`, `logs` (standard python reading & AST tokenizers).
 * **Documents**: `pdf` (`pypdf`, `pymupdf`), `docx` (`python-docx`), `pptx` (`python-pptx`).
