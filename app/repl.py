@@ -14,18 +14,20 @@ from pathlib import Path
 from typing import Optional
 
 from rich.console import Console
+from rich.markup import escape
 
 from core.orchestrator import Orchestrator
 from core.task import Task
 from core.protocol import Message, MessageType
 from core.events import event_bus, EventType
-from core.security import approve_path
+from core.security import approve_request
 from core.settings import load_settings
 from execution.permissions import PermissionRequestRequired
 from tools.terminal import TerminalTool
 from jev.decision import JevRouter
 from llm.tracker import token_tracker
 from ui.banner import render_banner, TEAL, VIOLET, DIM
+from ui.activity import ActivityIndicator, ActivityPrinter, TOOL_LABELS, format_tokens, tool_call_label, tool_result_summary
 
 ROUTE_LABELS = {"direct_answer": "direct", "single_agent": "1 agent", "full_orchestrator": "full team"}
 
@@ -40,6 +42,12 @@ SHELL_COMMAND_PATTERN = re.compile(
 )
 
 
+
+def _describe_action(action) -> str:
+    args = action.get("args", {}) or {}
+    target = args.get("path") or args.get("script_path") or args.get("command") or ""
+    return f"{action.get('tool', '?')}({target})" if target else str(action.get("tool", "?"))
+
 class SaiRepl:
     def __init__(self):
         self.console = Console()
@@ -48,6 +56,13 @@ class SaiRepl:
         # One Task/TaskContext lives for the whole session so conversation
         # history and working memory persist across turns.
         self.task = Task(goal="")
+        self.printer = ActivityPrinter(self.console)
+        self.activity = ActivityIndicator(self.console)
+        self._current_agent = ""
+        # (tool, display_args) between TOOL_STARTED and TOOL_FINISHED -- a tool
+        # that raises PermissionRequestRequired mid-run never finishes, and the
+        # approval prompt needs to know its ⏺ line is already on screen.
+        self._open_tool: Optional[tuple] = None
         self._register_events()
 
     # ------------------------------------------------------------------
@@ -63,16 +78,25 @@ class SaiRepl:
         event_bus.subscribe(EventType.ERROR, self._on_error)
 
     def _on_agent_started(self, event):
-        agent = event.data.get("agent", "")
-        self.console.print(f"\n[{DIM}]· [{VIOLET}]{agent}[/{VIOLET}] thinking...[/{DIM}]")
+        self._current_agent = event.data.get("agent", "")
+        self.activity.show(f"{self._current_agent} thinking")
 
     def _on_tool_started(self, event):
-        self.console.print(f"  [{TEAL}]→[/{TEAL}] {event.data.get('tool', '')}", style=DIM)
+        tool = event.data.get("tool", "")
+        args = event.data.get("args") or {}
+        self._open_tool = (tool, args)
+        self.printer.tool_call(tool_call_label(tool, args))
+        who = self._current_agent or "sAI"
+        self.activity.show(f"{who} running {TOOL_LABELS.get(tool, tool)}")
 
     def _on_tool_finished(self, event):
+        tool = event.data.get("tool", "")
+        args = self._open_tool[1] if self._open_tool and self._open_tool[0] == tool else {}
         ok = event.data.get("success", True)
-        mark = f"[green]✓[/green]" if ok else "[red]✗[/red]"
-        self.console.print(f"  {mark} {event.data.get('tool', '')}")
+        self.printer.tool_result(tool_result_summary(tool, args, ok, event.data.get("output", "")), ok)
+        self._open_tool = None
+        if self._current_agent:
+            self.activity.show(f"{self._current_agent} thinking")
 
     def _on_agent_finished(self, event):
         agent = event.data.get("agent", "")
@@ -82,15 +106,25 @@ class SaiRepl:
             payload = getattr(msg, "payload", {}) or {}
             summary = payload.get("summary") or payload.get("content") or ""
         if summary:
-            self.console.print(f"[bold {VIOLET}]{agent}[/bold {VIOLET}] {summary}")
+            self.printer.agent_message(agent, summary)
 
     def _on_error(self, event):
-        self.console.print(f"  [bold red]⚠ error:[/bold red] {event.data.get('msg', '')}")
+        self.printer.note(f"[bold red]Error:[/bold red] [red]{escape(str(event.data.get('msg', '')))}[/red]")
 
-    def _prompt_approval(self, preq: PermissionRequestRequired) -> bool:
-        self.console.print(f"\n[bold yellow]⚠ {preq}[/bold yellow]")
-        answer = self.console.input("[yellow]Allow this action? [y/N] [/yellow]").strip().lower()
-        return answer in ("y", "yes")
+    def _prompt_approval(self, preq: PermissionRequestRequired, action: Optional[dict] = None) -> bool:
+        with self.activity.paused():
+            # Show which call is asking, unless its ⏺ line is already on screen
+            # (tools like Bash raise this from inside execute(), after TOOL_STARTED).
+            if self._open_tool is None:
+                label = tool_call_label(action.get("tool", ""), action.get("args")) if action else f"Access({preq.path})"
+                self.printer.tool_call(label)
+            self.printer.note(f"[yellow]Permission needed:[/yellow] {escape(preq.reason)}")
+            answer = self.console.input(f"     [bold yellow]Allow? \\[y/N][/bold yellow] ").strip().lower()
+        self._open_tool = None
+        approved = answer in ("y", "yes")
+        if not approved:
+            self.printer.tool_result("Declined -- nothing was run", ok=False)
+        return approved
 
     # ------------------------------------------------------------------
     # Main loop
@@ -119,8 +153,16 @@ class SaiRepl:
 
             try:
                 self._handle_turn(user_input)
+            except KeyboardInterrupt:
+                # Like Claude Code: ctrl+c stops the current turn, not the app.
+                self.activity.hide()
+                self._open_tool = None
+                self.printer.note(f"[red]Interrupted[/red] [{DIM}]· tell sAI what to do instead[/{DIM}]")
             except Exception as e:
-                self.console.print(f"  [bold red]⚠ Unexpected error:[/bold red] {e}")
+                self.activity.hide()
+                self.printer.note(f"[bold red]Unexpected error:[/bold red] {escape(str(e))}")
+            finally:
+                self.activity.hide()
 
     # ------------------------------------------------------------------
     # Boxed input prompt — a framed row instead of a bare arrow, plus a
@@ -181,16 +223,23 @@ class SaiRepl:
             return
 
         before = self._token_snapshot()
+        self._current_agent = ""
+        self.activity.show("Jev routing")
 
         agent_names = [a.name for a in self.orchestrator.agents]
         agent_roles = {a.name: a.role for a in self.orchestrator.agents}
         decision = self.jev.decide(stripped, agent_names, self._recent_turn_summaries(), agent_roles=agent_roles)
 
         if decision.fallback:
-            self.console.print(f"[{DIM}]jev: routing to full orchestrator ({decision.reasoning})[/{DIM}]")
+            self.printer.note(f"[{DIM}]jev: routing to full team ({escape(decision.reasoning)})[/{DIM}]")
+        elif decision.route == "single_agent" and decision.agent:
+            self.printer.note(f"[{DIM}]jev → {escape(decision.agent)}[/{DIM}]")
+        elif decision.route == "full_orchestrator":
+            self.printer.note(f"[{DIM}]jev → full team[/{DIM}]")
 
         if decision.route == "direct_answer":
-            self.console.print(f"[bold {VIOLET}]sAI[/bold {VIOLET}] {decision.answer}")
+            self.activity.hide()
+            self.printer.agent_message("sAI", decision.answer)
             msg = Message(
                 sender="sAI",
                 receiver="User",
@@ -206,6 +255,7 @@ class SaiRepl:
             else:
                 self._run_full_orchestrator()
 
+        self.activity.hide()
         self._print_token_footer(before, decision.route)
 
     # ------------------------------------------------------------------
@@ -222,9 +272,9 @@ class SaiRepl:
         dcalls = token_tracker.calls_count - before[2]
         route_label = ROUTE_LABELS.get(route, route)
         self.console.print(
-            f"[{DIM}]· jev:{route_label} · +{din:,} in / +{dout:,} out "
-            f"({dcalls} call{'s' if dcalls != 1 else ''}) · "
-            f"session {token_tracker.input_tokens:,} in / {token_tracker.output_tokens:,} out[/{DIM}]"
+            f"\n[{DIM}]  jev:{route_label} · ↑ {format_tokens(din)} in · ↓ {format_tokens(dout)} out · "
+            f"{dcalls} call{'s' if dcalls != 1 else ''} · "
+            f"session {format_tokens(token_tracker.input_tokens + token_tracker.output_tokens)} tokens[/{DIM}]"
         )
 
     def _recent_turn_summaries(self):
@@ -291,16 +341,23 @@ class SaiRepl:
     def _run_terminal_bypass(self, user_input: str):
         command = user_input[1:].strip() if user_input.startswith("!") else user_input
         tool = TerminalTool()
+        action = {"tool": "execute_command", "args": {"command": command}}
+        self.printer.tool_call(tool_call_label("execute_command", action["args"]))
+        self._open_tool = ("execute_command", action["args"])
         try:
-            result = tool.execute({"command": command})
-        except PermissionRequestRequired as preq:
-            if self._prompt_approval(preq):
-                approve_path(preq.path)
+            self.activity.show("Running")
+            try:
                 result = tool.execute({"command": command})
-            else:
-                self.console.print("  [red]✗ Declined.[/red]")
+            finally:
+                self.activity.hide()
+        except PermissionRequestRequired as preq:
+            if not self._prompt_approval(preq, action):
                 return
-        self.console.print(result)
+            approve_request(preq.path, preq.kind)
+            result = tool.execute({"command": command})
+        self._open_tool = None
+        # You asked for this command directly -- show all of its output.
+        self.printer.tool_result(result.rstrip() or "(no output)", ok=not result.startswith(("Error", "Security Error")))
 
     # ------------------------------------------------------------------
     # Jev route: single_agent — one agent turn, actions executed once
@@ -323,30 +380,54 @@ class SaiRepl:
         message = agent.run(self.task.context)
         response = message.metadata.get("response")
 
-        if response and response.actions:
-            for action in response.actions:
-                self._execute_with_approval(action, agent)
-
-        self.task.context.conversation.add(message)
+        # Published before the actions run so the agent's message prints above
+        # its ⏺ tool calls, the way Claude Code orders text and tool use.
         event_bus.publish(EventType.AGENT_FINISHED, {"agent": agent.name, "msg": message}, source="Jev")
 
-    def _execute_with_approval(self, action, agent):
+        not_done = []
+        if response and response.actions:
+            for action in response.actions:
+                if not self._execute_with_approval(action, agent):
+                    not_done.append(_describe_action(action))
+
+        self.task.context.conversation.add(message)
+
+        # The agent writes its message *before* its actions run, so it reads as
+        # if everything succeeded. Say plainly what didn't happen.
+        if not_done:
+            self.console.print()
+            self.printer.note(
+                f"[bold yellow]Not completed:[/bold yellow] {escape(', '.join(not_done))} "
+                f"[{DIM}](the message above describes what was attempted)[/{DIM}]"
+            )
+
+    def _execute_with_approval(self, action, agent) -> bool:
+        """Runs one action; returns True only if it actually succeeded."""
         tool_name = action.get("tool", "")
         try:
             result = self.orchestrator.execution_engine.execute(action)
         except PermissionRequestRequired as preq:
-            if self._prompt_approval(preq):
-                approve_path(preq.path)
+            if self._prompt_approval(preq, action):
+                approve_request(preq.path, preq.kind)
                 try:
                     result = self.orchestrator.execution_engine.execute(action)
                 except PermissionRequestRequired:
-                    self.console.print(f"  [red]✗ Still not permitted: {tool_name}[/red]")
-                    return
+                    self._open_tool = None
+                    self.printer.tool_result(f"Still not permitted: {tool_name}", ok=False)
+                    self._record_tool_result(agent, f"NOT PERMITTED: {_describe_action(action)} -- it did not run.")
+                    return False
             else:
-                self.console.print(f"  [red]✗ Declined: {tool_name}[/red]")
-                return
+                # Record it: otherwise the history only holds the agent's
+                # optimistic summary, and later turns (Jev included) claim the
+                # file was written.
+                self._record_tool_result(agent, f"DECLINED by user: {_describe_action(action)} -- it did not run.")
+                return False
 
         content = result.stdout if result.success else result.stderr
+        self._record_tool_result(agent, content)
+        return result.success
+
+    def _record_tool_result(self, agent, content: str):
         result_msg = Message(
             sender="System", receiver=agent.name, type=MessageType.TOOL_RESULT, payload={"content": content}
         )
@@ -368,9 +449,13 @@ class SaiRepl:
             except PermissionRequestRequired as preq:
                 resume_agent = self.task.context.current_agent
                 if self._prompt_approval(preq):
-                    approve_path(preq.path)
+                    approve_request(preq.path, preq.kind)
                     start_agent = resume_agent
                     continue
-                self.console.print("  [red]✗ Permission declined — aborting this task.[/red]")
+                self.printer.note("[red]Task stopped[/red] -- the permission was declined.")
+                self.task.context.conversation.add(Message(
+                    sender="System", receiver="User", type=MessageType.TOOL_RESULT,
+                    payload={"content": f"DECLINED by user: {preq.path} -- task aborted, that action did not run."},
+                ))
                 return
-        self.console.print("  [red]✗ Too many permission retries — aborting.[/red]")
+        self.printer.note("[red]Task stopped[/red] -- too many permission retries.")
