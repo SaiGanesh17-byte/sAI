@@ -11,6 +11,7 @@ class PromptBuilder:
         # Load and serialize persistent memory graph
         graphiti_str = "No active historical facts mapped in memory graph."
         aider_directive = ""
+        settings = {}
         try:
             from core.settings import load_settings
             settings = load_settings()
@@ -55,7 +56,9 @@ class PromptBuilder:
         
         repo_snapshot = ""
         if repository and hasattr(repository, "get_repo_map"):
-            repo_snapshot = repository.get_repo_map()
+            # ~4 chars/token, same estimate as llm/runtime.py::ContextCompressor.
+            repo_budget_tokens = settings.get("repo_map_token_budget", 1500)
+            repo_snapshot = repository.get_repo_map(max_chars=int(repo_budget_tokens) * 4)
         else:
             repo_snapshot = "No active repository symbols mapped."
 

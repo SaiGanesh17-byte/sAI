@@ -14,6 +14,23 @@ class ToolResult:
     duration_ms: float = 0.0
     artifacts: List[str] = field(default_factory=list)
 
+# Output preview carried on TOOL_FINISHED events, for UIs to summarize.
+OUTPUT_PREVIEW_CHARS = 2000
+
+# Args worth showing in a UI next to the tool name. Bulk payloads (file
+# content, patches) are reduced to a line count instead of being copied
+# into every event.
+_DISPLAY_ARG_KEYS = ("path", "script_path", "command", "query", "pattern", "action", "expression", "operation")
+
+
+def _display_args(args: Dict[str, Any]) -> Dict[str, Any]:
+    shown = {k: args[k] for k in _DISPLAY_ARG_KEYS if args.get(k)}
+    for bulk in ("content", "patch"):
+        if isinstance(args.get(bulk), str):
+            shown[f"{bulk}_lines"] = args[bulk].count("\n") + 1
+    return shown
+
+
 class ExecutionEngine:
     """
     Coordinates tool lookups from the registry and runs validation checks.
@@ -44,22 +61,32 @@ class ExecutionEngine:
 
         path_arg = args.get("path") or args.get("script_path")
         if path_arg:
-            if not PermissionChecker.validate_path(str(path_arg)):
+            # Resolve relative paths against the workspace, exactly as the tools
+            # themselves do. Validating the raw string resolved it against the
+            # process cwd instead, so launching `sai` from ~ flagged every
+            # relative write (e.g. "query_api.py") as "outside sandbox".
+            from pathlib import Path
+            from core.security import get_current_workspace
+            target = Path(str(path_arg)).expanduser()
+            if not target.is_absolute():
+                target = get_current_workspace() / target
+            if not PermissionChecker.validate_path(str(target)):
                 # Instead of returning a soft error, raise the interactive permission exception
                 raise PermissionRequestRequired(
-                    path=str(path_arg),
+                    path=str(target.resolve()),
                     reason=f"Agent wants to execute '{tool_name}' tool on path outside sandbox."
                 )
 
         event_bus.publish(
             EventType.TOOL_STARTED,
-            {"tool": tool_name},
+            {"tool": tool_name, "args": _display_args(args)},
             source="ExecutionEngine"
         )
 
         start_time = time.time()
         try:
-            stdout_content = tool.execute(args)
+            from core.security import mask_secrets
+            stdout_content = mask_secrets(tool.execute(args))
             duration_ms = (time.time() - start_time) * 1000
 
             success = not stdout_content.startswith("Error")
@@ -76,7 +103,12 @@ class ExecutionEngine:
 
             event_bus.publish(
                 EventType.TOOL_FINISHED,
-                {"tool": tool_name, "success": success, "duration_ms": duration_ms},
+                {
+                    "tool": tool_name,
+                    "success": success,
+                    "duration_ms": duration_ms,
+                    "output": stdout_content[:OUTPUT_PREVIEW_CHARS],
+                },
                 source="ExecutionEngine"
             )
             return result
@@ -89,6 +121,12 @@ class ExecutionEngine:
             duration_ms = (time.time() - start_time) * 1000
             err_msg = f"Error during tool execution: {e}"
             event_bus.publish(EventType.ERROR, {"msg": err_msg}, source="ExecutionEngine")
+            # Close out the TOOL_STARTED above so UIs don't leave it hanging.
+            event_bus.publish(
+                EventType.TOOL_FINISHED,
+                {"tool": tool_name, "success": False, "duration_ms": duration_ms, "output": err_msg},
+                source="ExecutionEngine"
+            )
             return ToolResult(
                 tool=tool_name,
                 success=False,

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from repository.scanner import RepositoryScanner
 from repository.indexer import RepositoryIndexer
 from repository.symbols import SymbolGraph
@@ -122,10 +122,31 @@ class RepositoryContext:
         except Exception as e:
             return f"Error executing FTS5 codebase search: {e}"
 
-    def get_repo_map(self) -> str:
+    def get_repo_map(self, max_chars: Optional[int] = None) -> str:
         """
         Generates a text-based tree summary of the repository with class/function symbol tables.
+
+        This goes into *every* agent prompt, so with `max_chars` set it degrades
+        instead of growing without bound (it was ~5k tokens -- over 70% of a
+        typical agent prompt -- for this repo alone): full map if it fits, else
+        the file tree without symbols, else a truncated file tree. Agents can
+        still pull details on demand via list_directory / grep_ast /
+        codebase_search.
         """
+        full = self._build_repo_map(with_symbols=True)
+        if max_chars is None or len(full) <= max_chars:
+            return full
+
+        hint = "\n...[repo map truncated to fit the prompt budget -- use list_directory, grep_ast or codebase_search for more]"
+        tree_only = self._build_repo_map(with_symbols=False)
+        if len(tree_only) + len(hint) <= max_chars:
+            return tree_only + "\n[symbols omitted to fit the prompt budget -- use grep_ast to look them up]"
+
+        cut = tree_only[: max(0, max_chars - len(hint))]
+        cut = cut[: cut.rfind("\n")] if "\n" in cut else cut
+        return cut + hint
+
+    def _build_repo_map(self, with_symbols: bool) -> str:
         files = self.scanner.scan()
         if not files:
             return "Workspace is empty."
@@ -139,7 +160,7 @@ class RepositoryContext:
             indent = "  " * (len(parts) - 1)
             tree_lines.append(f"{indent}├── {parts[-1]}")
             
-            cached_entry = self.cache.get_file_cache(rel_str)
+            cached_entry = self.cache.get_file_cache(rel_str) if with_symbols else None
             if cached_entry:
                 symbols = cached_entry.get("symbols", {})
                 for cls in symbols.get("classes", []):

@@ -16,10 +16,16 @@ from core.orchestrator import Orchestrator
 from core.task import Task
 from core.events import event_bus, Event, EventType
 from core.protocol import Message, MessageType
-from core.security import approve_path
+from core.security import approve_request
 from execution.permissions import PermissionRequestRequired
 from jev.decision import JevRouter
 
+
+
+def _describe_action(action) -> str:
+    args = action.get("args", {}) or {}
+    target = args.get("path") or args.get("script_path") or args.get("command") or ""
+    return f"{action.get('tool', '?')}({target})" if target else str(action.get("tool", "?"))
 
 class AgentCard(Static):
     """
@@ -387,14 +393,24 @@ class SaiApp(App):
         message = agent.run(self.sai_task.context)
         response = message.metadata.get("response")
 
+        not_done = []
         if response and response.actions:
             for action in response.actions:
-                self._execute_action_with_approval(action, agent)
+                if not self._execute_action_with_approval(action, agent):
+                    not_done.append(_describe_action(action))
 
         self.sai_task.context.conversation.add(message)
         event_bus.publish(EventType.AGENT_FINISHED, {"agent": agent.name, "msg": message}, source="Jev")
 
-    def _execute_action_with_approval(self, action, agent) -> None:
+        # The agent's summary is written before its actions run, so it reads as
+        # if everything succeeded -- say plainly what didn't happen.
+        if not_done:
+            self.call_from_thread(
+                self.mount_tool_line, f"Not completed: {', '.join(not_done)} (the summary above describes what was attempted)", False
+            )
+
+    def _execute_action_with_approval(self, action, agent) -> bool:
+        """Runs one action; returns True only if it actually succeeded."""
         tool_name = action.get("tool", "")
         try:
             result = self.orchestrator.execution_engine.execute(action)
@@ -404,12 +420,19 @@ class SaiApp(App):
                     result = self.orchestrator.execution_engine.execute(action)
                 except PermissionRequestRequired:
                     self.call_from_thread(self.mount_tool_line, f"Still not permitted: {tool_name}", False)
-                    return
+                    self._record_tool_result(agent, f"NOT PERMITTED: {_describe_action(action)} -- it did not run.")
+                    return False
             else:
                 self.call_from_thread(self.mount_tool_line, f"Declined: {tool_name}", False)
-                return
+                # Record it, or later turns only see the agent's optimistic summary.
+                self._record_tool_result(agent, f"DECLINED by user: {_describe_action(action)} -- it did not run.")
+                return False
 
         content = result.stdout if result.success else result.stderr
+        self._record_tool_result(agent, content)
+        return result.success
+
+    def _record_tool_result(self, agent, content: str) -> None:
         result_msg = Message(
             sender="System", receiver=agent.name, type=MessageType.TOOL_RESULT, payload={"content": content}
         )
@@ -429,7 +452,7 @@ class SaiApp(App):
             except PermissionRequestRequired as preq:
                 resume_agent = self.sai_task.context.current_agent
                 if self._ask_permission_sync(preq):
-                    approve_path(preq.path)
+                    approve_request(preq.path, preq.kind)
                     start_agent = resume_agent
                     continue
                 self.call_from_thread(self.mount_tool_line, "Permission declined -- aborting this task.", False)
@@ -471,7 +494,7 @@ class SaiApp(App):
         approved = value.strip().lower() in ("y", "yes")
         chat_container = self.query_one("#chat-container")
         if approved:
-            approve_path(preq.path)
+            approve_request(preq.path, preq.kind)
             chat_container.mount(Static("✓ Approved. Resuming...", classes="tool-call-line"))
         else:
             chat_container.mount(Static("✗ Declined.", classes="tool-call-line"))

@@ -89,3 +89,37 @@ def test_permission_request_required_from_preflight_path_check(stub_tool_registr
     outside_path = "/definitely/outside/the/sandbox/file.txt"
     with pytest.raises(PermissionRequestRequired):
         engine.execute({"tool": "noop_tool", "args": {"path": outside_path}})
+
+
+def test_relative_path_is_checked_against_workspace_not_cwd(stub_tool_registry, tmp_workspace, tmp_path_factory, monkeypatch):
+    """
+    Regression: launching `sai` from ~ made the pre-flight check resolve a
+    relative path like "query_api.py" against the process cwd, so every
+    relative write was flagged as outside the sandbox.
+    """
+    monkeypatch.chdir(tmp_path_factory.mktemp("launched_from_elsewhere"))
+    result = ExecutionEngine().execute({"tool": "noop_tool", "args": {"path": "query_api.py"}})
+    assert result.stdout == "should not have been called"  # i.e. it ran, no permission prompt
+
+
+def test_outside_path_request_carries_absolute_path(stub_tool_registry, tmp_workspace):
+    with pytest.raises(PermissionRequestRequired) as exc:
+        ExecutionEngine().execute({"tool": "noop_tool", "args": {"path": "../escape.txt"}})
+    assert exc.value.path == str((tmp_workspace / ".." / "escape.txt").resolve())
+    assert exc.value.kind == "path"
+
+
+def test_tool_output_has_secrets_masked(stub_tool_registry, tmp_workspace, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-secret-value-123")
+
+    class LeakyTool(NoOpTool):
+        @property
+        def name(self):
+            return "leaky_tool"
+
+        def execute(self, args):
+            return "OPENROUTER_API_KEY=sk-or-secret-value-123"
+
+    stub_tool_registry.register(LeakyTool())
+    result = ExecutionEngine().execute({"tool": "leaky_tool", "args": {}})
+    assert "sk-or-secret-value-123" not in result.stdout
