@@ -145,16 +145,15 @@ class TerminalTool(BaseTool):
             return "Error: 'command' argument is required."
 
         # Check for destructive/risky actions and prompt permission gate
-        from core.security import consume_approved_command
+        from core.security import consume_approved_command, find_risky_pattern
         from execution.permissions import PermissionRequestRequired
-        
-        command_lower = command.strip().lower()
-        destructive_keywords = ["rm ", "git push", "git clean", "npm publish", "docker run", "deploy", "delete"]
-        if any(kw in command_lower for kw in destructive_keywords):
+
+        matched_pattern = find_risky_pattern(command)
+        if matched_pattern:
             if not consume_approved_command(command):
                 raise PermissionRequestRequired(
                     path=command,
-                    reason="Destructive command execution approval."
+                    reason=f"Destructive command execution approval (matched pattern: '{matched_pattern}')."
                 )
 
         # Command Path Travel Sanitization Check

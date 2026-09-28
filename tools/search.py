@@ -1,10 +1,8 @@
 from typing import Dict, Any
 from tools.base import BaseTool
-from duckduckgo_search import DDGS
-import warnings
-
-# Suppress the duckduckgo_search package rename runtime warning
-warnings.filterwarnings("ignore", category=RuntimeWarning, module="duckduckgo_search")
+from ddgs import DDGS
+from ddgs.exceptions import RatelimitException, TimeoutException
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 class SearchTool(BaseTool):
     @property
@@ -29,21 +27,38 @@ class SearchTool(BaseTool):
             "required": ["query"]
         }
 
+    # DDG's free/unauthenticated search endpoint rate-limits aggressively under
+    # back-to-back calls (a WebSearch agent turn commonly fires 2-3 in a row) --
+    # retry only the transient failure classes, not a permanently bad query.
+    @retry(
+        retry=retry_if_exception_type((RatelimitException, TimeoutException)),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=8),
+        reraise=True,
+    )
+    def _search(self, query: str, max_results: int) -> list:
+        with DDGS() as ddgs:
+            return list(ddgs.text(query, max_results=max_results))
+
     def execute(self, args: Dict[str, Any]) -> str:
         query = args.get("query")
         if not query:
             return "Error: 'query' argument is required."
 
         try:
-            with DDGS() as ddgs:
-                results = list(ddgs.text(query, max_results=5))
+            results = self._search(query, max_results=6)
             if not results:
-                return f"No search results found for query: '{query}'"
-            
+                return (
+                    f"No search results found for query: '{query}'. "
+                    "Try a more specific or differently-phrased query before giving up on this topic."
+                )
+
             output = []
             for r in results:
                 output.append(f"Title: {r.get('title')}\nURL: {r.get('href')}\nBody: {r.get('body')}\n---")
             return "\n".join(output)
+        except RatelimitException:
+            return "Error performing web search: rate-limited by the search provider after retries. Wait a moment before searching again."
         except Exception as e:
             return f"Error performing web search: {e}"
 

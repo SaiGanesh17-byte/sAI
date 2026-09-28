@@ -61,7 +61,7 @@ class ExecutionEngine:
         try:
             stdout_content = tool.execute(args)
             duration_ms = (time.time() - start_time) * 1000
-            
+
             success = not stdout_content.startswith("Error")
             stderr_content = "" if success else stdout_content
 
@@ -81,6 +81,10 @@ class ExecutionEngine:
             )
             return result
 
+        except PermissionRequestRequired:
+            # Let interactive permission prompts propagate to the caller instead of
+            # being swallowed into a generic failed ToolResult below.
+            raise
         except Exception as e:
             duration_ms = (time.time() - start_time) * 1000
             err_msg = f"Error during tool execution: {e}"

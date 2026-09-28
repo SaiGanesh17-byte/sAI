@@ -49,6 +49,21 @@ class PythonTool(BaseTool):
         if not target_path.exists():
             return f"Error: File '{script_path_str}' does not exist."
 
+        from core.security import find_risky_pattern, is_path_approved
+        from execution.permissions import PermissionRequestRequired
+
+        try:
+            script_content = target_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            script_content = ""
+
+        matched_pattern = find_risky_pattern(script_content)
+        if matched_pattern and not is_path_approved(target_path.resolve()):
+            raise PermissionRequestRequired(
+                path=script_path_str,
+                reason=f"Script contains a potentially risky pattern: '{matched_pattern}'."
+            )
+
         try:
             result = subprocess.run(
                 ["python3", str(target_path)],

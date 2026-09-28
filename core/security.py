@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Optional
 from app import config
 
 WORKSPACE_ROOT = Path("/Users/saiganeshongolu/sAI").resolve()
@@ -177,6 +178,35 @@ def revert_to_transaction_snapshot(session_id: str, target_tx_id: int) -> tuple:
     if errors:
         return False, "; ".join(errors)
     return True, f"Reverted {len(reverted_paths)} edits."
+
+# Centralized risky-content detection, shared by any tool that runs shell
+# commands or executes script content (TerminalTool, PythonTool). This is a
+# substring-matching heuristic, not a claim of airtight command-injection
+# defense -- real isolation is the optional docker_sandbox setting. The goal
+# here is consistent coverage across tools instead of a narrower, duplicated,
+# shell-only list.
+RISKY_PATTERNS = [
+    # shell
+    "rm ", "sudo ", "chmod 777", "mkfs", "dd if=", "shutdown", "reboot",
+    "kill -9", "> /dev/", ":(){ :|:& };:",
+    "git push", "git clean", "npm publish", "docker run", "deploy", "delete",
+    # pipe-to-shell
+    "| sh", "| bash", "|sh", "|bash",
+    # python-script content
+    "os.system", "subprocess.run", "subprocess.call", "subprocess.popen",
+    "shutil.rmtree", "os.remove", "os.unlink", "os.rmdir",
+]
+
+def find_risky_pattern(text: str) -> Optional[str]:
+    """
+    Returns the first RISKY_PATTERNS entry found in `text` (case-insensitive),
+    or None if nothing matched.
+    """
+    lowered = (text or "").lower()
+    for pattern in RISKY_PATTERNS:
+        if pattern in lowered:
+            return pattern
+    return None
 
 def approve_command(command: str):
     with COMMANDS_LOCK:

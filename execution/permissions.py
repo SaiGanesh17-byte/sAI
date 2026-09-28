@@ -5,6 +5,7 @@ class PermissionRequestRequired(Exception):
     def __init__(self, path: str, reason: str):
         self.path = path
         self.reason = reason
+        super().__init__(f"Permission required for '{path}': {reason}")
 
 class PermissionChecker:
     @staticmethod
