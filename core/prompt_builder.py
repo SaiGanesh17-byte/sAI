@@ -116,7 +116,11 @@ class PromptBuilder:
                 f"{instructions}\n\n"
             )
 
-        prompt = f"""{instructions_section}[SYSTEM CONTEXT & SERVICE REGISTRIES]{aider_directive}
+        from tools.todo import get_todos, render_todos
+        todos = get_todos()
+        todo_section = f"[CURRENT TODO LIST -- keep it updated with todo_write]\n{render_todos(todos)}\n\n" if todos else ""
+
+        prompt = f"""{instructions_section}{todo_section}[SYSTEM CONTEXT & SERVICE REGISTRIES]{aider_directive}
 
 [PERSISTENT MEMORY GRAPH (GRAPHITI)]
 {graphiti_str}

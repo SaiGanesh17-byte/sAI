@@ -27,6 +27,7 @@ from core.security import (
 from core.settings import load_settings, save_settings
 from core.project_instructions import load_project_instructions
 from core.session import SessionStore, compact_conversation, estimate_conversation_tokens
+from tools.todo import set_todos
 from core.kernel import kernel
 from execution.permissions import PermissionRequestRequired
 from tools.terminal import TerminalTool
@@ -542,6 +543,7 @@ class SaiRepl:
 
         if cmd == "/clear":
             self.task = Task(goal="")
+            set_todos([])
             self.session_id = SessionStore.new_id()  # the old session stays saved for /resume
             self.console.print(f"[{DIM}]Started a fresh session (the previous one is saved -- /resume to go back).[/{DIM}]")
             return

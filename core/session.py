@@ -20,6 +20,7 @@ from typing import List, Optional
 
 from core.protocol import Message, MessageType
 from memory.working import WorkingMemory
+from tools.todo import get_todos, set_todos
 
 SESSIONS_ROOT = Path(__file__).resolve().parent.parent / ".sai" / "sessions"
 CHARS_PER_TOKEN = 4
@@ -102,6 +103,7 @@ class SessionStore:
             "goal": task.goal,
             "messages": messages,
             "memory": _memory_to_dict(task.context.memory),
+            "todos": get_todos(),
         }
         path = self.dir / f"{session_id}.json"
         tmp = path.with_suffix(".json.tmp")
@@ -132,6 +134,7 @@ class SessionStore:
         conversation.messages[:] = [message_from_dict(m) for m in data.get("messages", [])]
         task.goal = data.get("goal", "")
         task.context.memory = _memory_from_dict(data.get("memory", {}), task.goal)
+        set_todos(data.get("todos") or [])
         return True
 
 

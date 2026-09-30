@@ -16,6 +16,11 @@ from tools.search import SearchTool, GrepAstTool, CodebaseSearchTool
 from tools.python import PythonTool
 from tools.memory import MemoryTool
 from tools.math import MathTool
+from tools.filesystem import EditFileTool
+from tools.find import GlobTool, GrepTool
+from tools.web_fetch import WebFetchTool
+from tools.terminal import BashOutputTool, KillShellTool
+from tools.todo import TodoWriteTool
 from repository.context import RepositoryContext
 from execution.engine import ExecutionEngine
 from agents.loop import ActionOutcome, ApproveFn, DEFAULT_MAX_STEPS, execute_with_approval, run_agent_loop
@@ -57,6 +62,13 @@ class Orchestrator:
             tool_reg.register(PythonTool())
             tool_reg.register(MemoryTool())
             tool_reg.register(MathTool())
+            tool_reg.register(EditFileTool())
+            tool_reg.register(GlobTool())
+            tool_reg.register(GrepTool())
+            tool_reg.register(WebFetchTool())
+            tool_reg.register(BashOutputTool())
+            tool_reg.register(KillShellTool())
+            tool_reg.register(TodoWriteTool())
             kernel.register_service("tool_registry", tool_reg)
 
             repo_ctx = RepositoryContext.get_cached_context(get_current_workspace())
@@ -88,7 +100,7 @@ class Orchestrator:
         finally:
             update_current_activity({"status": "thinking", "agent": agent.name, "tool": "", "path": "", "command": ""})
 
-        if outcome.status == "ok" and tool_name in ["write_file", "patch_file"] and target_path:
+        if outcome.status == "ok" and tool_name in ["write_file", "patch_file", "edit_file"] and target_path:
             workspace = get_current_workspace()
             RepositoryContext.invalidate_cache(workspace)
             file_path = Path(target_path)

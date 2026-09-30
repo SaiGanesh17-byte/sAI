@@ -20,7 +20,7 @@ OUTPUT_PREVIEW_CHARS = 2000
 # Args worth showing in a UI next to the tool name. Bulk payloads (file
 # content, patches) are reduced to a line count instead of being copied
 # into every event.
-_DISPLAY_ARG_KEYS = ("path", "script_path", "command", "query", "pattern", "action", "expression", "operation")
+_DISPLAY_ARG_KEYS = ("path", "script_path", "command", "query", "pattern", "url", "shell_id", "action", "expression", "operation")
 
 
 def _workspace_path(path_str: str):
@@ -32,7 +32,7 @@ def _workspace_path(path_str: str):
 
 def _display_args(args: Dict[str, Any]) -> Dict[str, Any]:
     shown = {k: args[k] for k in _DISPLAY_ARG_KEYS if args.get(k)}
-    for bulk in ("content", "patch"):
+    for bulk in ("content", "patch", "new_string"):
         if isinstance(args.get(bulk), str):
             shown[f"{bulk}_lines"] = args[bulk].count("\n") + 1
     return shown
@@ -49,7 +49,7 @@ class ExecutionEngine:
         self.file_versions: Dict[str, int] = {}
 
     def _read_before_edit_error(self, tool_name: str, args: Dict[str, Any]) -> Optional[str]:
-        if tool_name not in ("write_file", "patch_file") or not args.get("path"):
+        if tool_name not in ("write_file", "patch_file", "edit_file") or not args.get("path"):
             return None
         from core.settings import load_settings
         if not load_settings().get("require_read_before_edit", True):
@@ -68,7 +68,7 @@ class ExecutionEngine:
         return None
 
     def _remember_file_version(self, tool_name: str, args: Dict[str, Any]) -> None:
-        if tool_name in ("read_file", "write_file", "patch_file") and args.get("path"):
+        if tool_name in ("read_file", "write_file", "patch_file", "edit_file") and args.get("path"):
             target = _workspace_path(args["path"])
             if target.exists():
                 self.file_versions[str(target.resolve())] = target.stat().st_mtime_ns

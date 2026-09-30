@@ -45,7 +45,7 @@ def describe_action(action: dict) -> str:
     return f"{action.get('tool', '?')}({target})" if target else str(action.get("tool", "?"))
 
 
-EDIT_TOOLS = {"write_file", "patch_file"}
+EDIT_TOOLS = {"write_file", "patch_file", "edit_file"}
 DIFF_CONTEXT_LINES = 3
 
 

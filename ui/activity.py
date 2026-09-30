@@ -51,6 +51,13 @@ TOOL_LABELS = {
     "git_operation": "Git",
     "memory_operation": "Memory",
     "math_solve": "Math",
+    "edit_file": "Update",
+    "glob": "Glob",
+    "grep": "Grep",
+    "web_fetch": "WebFetch",
+    "bash_output": "BashOutput",
+    "kill_shell": "KillShell",
+    "todo_write": "Todos",
 }
 
 
@@ -63,7 +70,7 @@ def tool_call_label(tool: str, args: Optional[Dict[str, Any]]) -> str:
     args = args or {}
     name = TOOL_LABELS.get(tool, tool or "?")
     target = next(
-        (str(args[k]) for k in ("path", "script_path", "command", "query", "pattern", "action", "operation") if args.get(k)),
+        (str(args[k]) for k in ("path", "script_path", "command", "query", "pattern", "url", "shell_id", "action", "operation") if args.get(k)),
         "",
     )
     if len(target) > 80:
@@ -78,8 +85,13 @@ def tool_result_summary(tool: str, args: Optional[Dict[str, Any]], success: bool
 
     if success and tool == "write_file":
         return f"Wrote {args.get('content_lines', '?')} lines to {args.get('path', 'file')}"
-    if success and tool == "patch_file":
+    if success and tool in ("patch_file", "edit_file"):
         return f"Updated {args.get('path', 'file')}"
+    if success and tool == "todo_write":
+        return output  # the rendered checklist, shown in full
+    if success and tool in ("glob", "grep") and not output.startswith("No "):
+        n = len(output.splitlines())
+        return f"Found {n} {'match' if n == 1 else 'matches'}" if tool == "grep" else f"Found {n} file{'s' if n != 1 else ''}"
     if success and tool == "read_file":
         return f"Read {len(output.splitlines())} lines"
     if not output:

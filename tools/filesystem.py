@@ -20,6 +20,21 @@ def apply_search_replace(content: str, patch: str) -> Tuple[Optional[str], Optio
     return new_content, None
 
 
+def apply_exact_edit(content: str, old: str, new: str, replace_all: bool = False) -> Tuple[Optional[str], Optional[str]]:
+    """Claude Code's Edit semantics: old_string must match exactly, and uniquely unless replace_all."""
+    if not old:
+        return None, "Error: 'old_string' must not be empty (use write_file to create a file)."
+    if old == new:
+        return None, "Error: 'old_string' and 'new_string' are identical -- nothing to change."
+    count = content.count(old)
+    if count == 0:
+        return None, "Error: 'old_string' was not found in the file. Re-read the file and copy the exact text, including indentation."
+    if count > 1 and not replace_all:
+        return None, (f"Error: 'old_string' appears {count} times. Include more surrounding lines to make it "
+                      f"unique, or set replace_all to true.")
+    return content.replace(old, new) if replace_all else content.replace(old, new, 1), None
+
+
 def resolve_in_workspace(path_str: str) -> Path:
     target = Path(path_str).expanduser()
     if not target.is_absolute():
@@ -47,6 +62,9 @@ def preview_edit(tool_name: str, args: Dict[str, Any]) -> Tuple[Optional[Path], 
         return target, old, args.get("content", ""), None
     if not target.exists():
         return target, "", None, f"Error: File '{path_str}' does not exist. Use write_file to create it first."
+    if tool_name == "edit_file":
+        new, err = apply_exact_edit(old, args.get("old_string", ""), args.get("new_string", ""), bool(args.get("replace_all")))
+        return target, old, new, err
     new, err = apply_search_replace(old, args.get("patch", ""))
     return target, old, new, err
 
@@ -228,6 +246,71 @@ class PatchFileTool(BaseTool):
             return f"Success: Applied patch to '{path_str}'."
         except Exception as e:
             return f"Error patching file '{path_str}': {e}"
+
+class EditFileTool(BaseTool):
+    @property
+    def name(self) -> str:
+        return "edit_file"
+
+    @property
+    def description(self) -> str:
+        return ("Edits a file by exact string replacement: replaces 'old_string' with 'new_string'. "
+                "old_string must match the file exactly (including indentation) and be unique unless "
+                "replace_all is true. Preferred over patch_file/write_file for changing existing files.")
+
+    @property
+    def permissions(self) -> list:
+        return ["write"]
+
+    @property
+    def schema(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Relative path to the file."},
+                "old_string": {"type": "string", "description": "Exact text to replace."},
+                "new_string": {"type": "string", "description": "Replacement text."},
+                "replace_all": {"type": "boolean", "description": "Replace every occurrence (default false)."},
+            },
+            "required": ["path", "old_string", "new_string"],
+        }
+
+    def execute(self, args: Dict[str, Any]) -> str:
+        path_str = args.get("path")
+        if not path_str:
+            return "Error: 'path' argument is required."
+        target_path = resolve_in_workspace(path_str)
+        if not validate_path(target_path):
+            return f"Error: Path '{path_str}' is outside the workspace sandbox."
+        if not target_path.is_file():
+            return f"Error: File '{path_str}' does not exist. Use write_file to create it."
+        try:
+            content = target_path.read_text(encoding="utf-8")
+        except Exception as e:
+            return f"Error reading file '{path_str}': {e}"
+
+        new_content, err = apply_exact_edit(content, args.get("old_string", ""), args.get("new_string", ""), bool(args.get("replace_all")))
+        if err:
+            return err
+        try:
+            import core.security
+            from core.security import save_transaction_snapshot
+            session_id = getattr(core.security, "CURRENT_SESSION_ID", "default_session")
+            save_transaction_snapshot(session_id, str(target_path.resolve()), content, new_content)
+        except Exception:
+            pass
+        try:
+            target_path.write_text(new_content, encoding="utf-8")
+            try:
+                from core.security import POST_PATCH_BUFFERS
+                POST_PATCH_BUFFERS[str(target_path.resolve())] = new_content
+            except Exception:
+                pass
+        except Exception as e:
+            return f"Error writing file '{path_str}': {e}"
+        replaced = content.count(args.get("old_string", "")) if args.get("replace_all") else 1
+        return f"Success: Edited '{path_str}' ({replaced} replacement{'s' if replaced != 1 else ''})."
+
 
 class ListDirectoryTool(BaseTool):
     @property

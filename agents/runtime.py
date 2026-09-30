@@ -101,6 +101,10 @@ HOW YOUR TURN WORKS (a tool-use loop):
   final answer to the user: what was actually done, based on the tool results -- including any
   failures -- plus file paths the user will want.
 - If a result says "declined", do not retry that action.
+- Find code with glob (file names) and grep (contents) rather than listing directories one by one.
+  Change existing files with edit_file (exact text replacement). For multi-step work, keep a
+  todo_write list. Long-running commands (servers, watchers) go in execute_command with
+  run_in_background, then bash_output / kill_shell.
 
 Your response MUST be a JSON object containing these keys:
 - "memory_update": overwrite string content updates for your section of shared memory.
