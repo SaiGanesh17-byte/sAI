@@ -125,6 +125,28 @@ class ActivityPrinter:
     def tool_result(self, summary: str, ok: bool = True) -> None:
         self._elbow(Text(summary, style=DIM if ok else "red"))
 
+    DIFF_MAX_LINES = 60
+
+    def diff(self, unified: str) -> None:
+        """A unified diff under a ⎿, colored like Claude Code's edit previews."""
+        body = Text()
+        lines = [ln for ln in unified.splitlines() if not ln.startswith(("--- ", "+++ "))]
+        added = sum(1 for ln in lines if ln.startswith("+"))
+        removed = sum(1 for ln in lines if ln.startswith("-"))
+        body.append(f"+{added} -{removed} lines\n", style=DIM)
+        for ln in lines[:self.DIFF_MAX_LINES]:
+            if ln.startswith("+"):
+                body.append(ln + "\n", style="green")
+            elif ln.startswith("-"):
+                body.append(ln + "\n", style="red")
+            elif ln.startswith("@@"):
+                body.append(ln + "\n", style=f"{DIM} italic")
+            else:
+                body.append(ln + "\n", style=DIM)
+        if len(lines) > self.DIFF_MAX_LINES:
+            body.append(f"… +{len(lines) - self.DIFF_MAX_LINES} more diff lines", style=DIM)
+        self._elbow(body)
+
     def note(self, markup: str) -> None:
         """A ⎿ line built from Rich markup (caller escapes any untrusted parts)."""
         self._elbow(Text.from_markup(markup))

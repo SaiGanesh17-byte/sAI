@@ -20,8 +20,11 @@ from core.orchestrator import Orchestrator
 from core.task import Task
 from core.protocol import Message, MessageType
 from core.events import event_bus, EventType
-from core.security import approve_request
-from core.settings import load_settings
+from core.security import (
+    SESSION_ALLOW_COMMAND_PREFIXES, allow_command_prefix_for_session, approve_request, command_allow_prefix,
+    edits_need_approval, set_session_auto_edits,
+)
+from core.settings import load_settings, save_settings
 from execution.permissions import PermissionRequestRequired
 from tools.terminal import TerminalTool
 from jev.decision import JevRouter
@@ -62,6 +65,7 @@ class SaiRepl:
         # approval prompt needs to know its ⏺ line is already on screen.
         self._open_tool: Optional[tuple] = None
         self._stream_buffer = ""
+        self._announced_tool: Optional[str] = None
         self._register_events()
 
     # ------------------------------------------------------------------
@@ -102,7 +106,10 @@ class SaiRepl:
         tool = event.data.get("tool", "")
         args = event.data.get("args") or {}
         self._open_tool = (tool, args)
-        self.printer.tool_call(tool_call_label(tool, args))
+        if self._announced_tool == tool:
+            self._announced_tool = None  # shown with its diff at approval time
+        else:
+            self.printer.tool_call(tool_call_label(tool, args))
         who = self._current_agent or "sAI"
         self.activity.show(f"{who} running {TOOL_LABELS.get(tool, tool)}")
 
@@ -130,19 +137,54 @@ class SaiRepl:
         self.printer.note(f"[bold red]Error:[/bold red] [red]{escape(str(event.data.get('msg', '')))}[/red]")
 
     def _prompt_approval(self, preq: PermissionRequestRequired, action: Optional[dict] = None) -> bool:
+        """
+        Claude-Code-style permission prompt: y = once, a = don't ask again this
+        session (for this kind of request), anything else = no. Edits show
+        their diff first.
+        """
         with self.activity.paused():
             # Show which call is asking, unless its ⏺ line is already on screen
             # (tools like Bash raise this from inside execute(), after TOOL_STARTED).
             if self._open_tool is None:
                 label = tool_call_label(action.get("tool", ""), action.get("args")) if action else f"Access({preq.path})"
                 self.printer.tool_call(label)
-            self.printer.note(f"[yellow]Permission needed:[/yellow] {escape(preq.reason)}")
-            answer = self.console.input(f"     [bold yellow]Allow? \\[y/N][/bold yellow] ").strip().lower()
+            if preq.kind == "edit" and preq.details:
+                self.printer.diff(preq.details)
+            else:
+                self.printer.note(f"[yellow]Permission needed:[/yellow] {escape(preq.reason)}")
+
+            always = self._always_option(preq)
+            choices = "y/N/a" if always else "y/N"
+            if always:
+                self.printer.note(f"[{DIM}]a = {escape(always)}[/{DIM}]")
+            answer = self.console.input(f"     [bold yellow]Allow? \\[{choices}][/bold yellow] ").strip().lower()
+
+        approved = answer in ("y", "yes") or bool(always and answer in ("a", "always"))
+        if always and answer in ("a", "always"):
+            self._apply_always(preq)
+        if preq.kind == "edit" and approved:
+            # The edit runs next and fires TOOL_STARTED; its ⏺ line is already shown.
+            self._announced_tool = action.get("tool") if action else None
         self._open_tool = None
-        approved = answer in ("y", "yes")
         if not approved:
-            self.printer.tool_result("Declined -- nothing was run", ok=False)
+            self.printer.tool_result("Declined -- nothing was changed" if preq.kind == "edit" else "Declined -- nothing was run", ok=False)
         return approved
+
+    @staticmethod
+    def _always_option(preq: PermissionRequestRequired) -> Optional[str]:
+        if preq.kind == "edit":
+            return "allow all edits for the rest of this session"
+        if preq.kind == "command":
+            prefix = command_allow_prefix(preq.path)
+            return f"always allow `{prefix} …` this session" if prefix else None
+        return None
+
+    @staticmethod
+    def _apply_always(preq: PermissionRequestRequired) -> None:
+        if preq.kind == "edit":
+            set_session_auto_edits(True)
+        elif preq.kind == "command":
+            allow_command_prefix_for_session(command_allow_prefix(preq.path))
 
     # ------------------------------------------------------------------
     # Main loop
@@ -319,6 +361,7 @@ class SaiRepl:
   [{TEAL}]/agents[/{TEAL}]   list all specialist agents and their roles
   [{TEAL}]/tokens[/{TEAL}]   show cumulative session token usage (alias: /cost)
   [{TEAL}]/clear[/{TEAL}]    reset this session's conversation and working memory
+  [{TEAL}]/permissions[/{TEAL}]  show approval rules · /permissions edits auto|ask · /permissions allow <cmd prefix>
   [{TEAL}]/help[/{TEAL}]     show this message
   [{TEAL}]!<cmd>[/{TEAL}]    run a shell command directly (e.g. !ls, !pytest)
   [{TEAL}]exit[/{TEAL}]      leave sAI
@@ -347,12 +390,48 @@ class SaiRepl:
 """)
             return
 
+        if cmd == "/permissions":
+            self._run_permissions_command(parts[1] if len(parts) > 1 else "")
+            return
+
         if cmd == "/clear":
             self.task = Task(goal="")
             self.console.print(f"[{DIM}]Session memory cleared (token usage above is unaffected).[/{DIM}]")
             return
 
         self.console.print(f"[{DIM}]Unknown command '{cmd}'. Try /help.[/{DIM}]")
+
+    def _run_permissions_command(self, arg: str):
+        words = arg.split(maxsplit=1)
+        settings = load_settings()
+        if words and words[0] == "edits" and len(words) == 2 and words[1] in ("auto", "ask"):
+            set_session_auto_edits(words[1] == "auto")
+            self.printer.note(f"Edits this session: [bold]{'applied without asking' if words[1] == 'auto' else 'shown as a diff and confirmed'}[/bold]")
+            return
+        if words and words[0] == "allow" and len(words) == 2:
+            rules = list(settings.get("allow_commands") or [])
+            if words[1] not in rules:
+                rules.append(words[1])
+                settings["allow_commands"] = rules
+                save_settings(settings)
+            self.printer.note(f"Saved: commands starting with [bold]{escape(words[1])}[/bold] never ask (settings.json allow_commands)")
+            return
+        if words:
+            self.printer.note(f"[{DIM}]Usage: /permissions · /permissions edits auto|ask · /permissions allow <command prefix>[/{DIM}]")
+            return
+
+        edits = "ask (diff + confirm)" if edits_need_approval() else "auto (no confirmation)"
+        saved = ", ".join(settings.get("allow_commands") or []) or "none"
+        session = ", ".join(sorted(SESSION_ALLOW_COMMAND_PREFIXES)) or "none"
+        self.console.print(f"""
+[bold {VIOLET}]Permissions[/bold {VIOLET}]
+  edits                  {edits}
+  always-allowed (saved) {escape(saved)}
+  allowed this session   {escape(session)}
+  read before edit       {'required' if settings.get('require_read_before_edit', True) else 'off'}
+
+  [{DIM}]Allow rules never match commands containing ; & | ` > < or $(...).[/{DIM}]
+""")
 
     # ------------------------------------------------------------------
     # `!<cmd>` / `git ...` bypass — mirrors app/main.py's shell bypass.

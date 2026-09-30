@@ -93,7 +93,8 @@ HOW YOUR TURN WORKS (a tool-use loop):
 - Put the tool calls you need in "actions". They run after you respond, and each result comes
   back to you as a "System to {self.name}: [tool(target) -> ok|failed|declined]" line in the
   conversation history below, and you respond again.
-- Work in small steps: e.g. read or list before you edit, then check the result.
+- Work in small steps: e.g. read or list before you edit, then check the result. You MUST read_file
+  an existing file before write_file/patch_file on it (edits to unread files are rejected).
 - While you are requesting actions, "summary" says what you are about to do ("Reading app.py to
   find the router."). Never claim an action succeeded before you have seen its "-> ok" result.
 - When the work is done (or you cannot proceed), return "actions": [] and make "summary" your

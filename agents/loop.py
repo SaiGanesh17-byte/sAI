@@ -9,6 +9,7 @@ of writing a summary up front and having its actions run blind afterwards
 (which let an agent report "Created query_api.py" for a write the user had
 declined).
 """
+import difflib
 import json
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional
@@ -44,12 +45,57 @@ def describe_action(action: dict) -> str:
     return f"{action.get('tool', '?')}({target})" if target else str(action.get("tool", "?"))
 
 
+EDIT_TOOLS = {"write_file", "patch_file"}
+DIFF_CONTEXT_LINES = 3
+
+
+def unified_diff(old: str, new: str, path: str) -> str:
+    return "".join(difflib.unified_diff(
+        old.splitlines(keepends=True), new.splitlines(keepends=True),
+        fromfile=f"a/{path}", tofile=f"b/{path}", n=DIFF_CONTEXT_LINES,
+    ))
+
+
+def _confirm_edit(action: dict, approve: ApproveFn) -> Optional[ActionOutcome]:
+    """
+    Claude Code's edit gate: show the diff and ask before a file changes.
+    Returns an outcome only when the user declines; otherwise the edit
+    proceeds. Edits the tool itself would reject (bad patch, missing file)
+    are left to the tool so the agent gets its normal error message.
+    """
+    from core.security import edits_need_approval
+    from tools.filesystem import preview_edit
+
+    if not edits_need_approval():
+        return None
+    target, old, new, error = preview_edit(action.get("tool"), action.get("args", {}) or {})
+    if error or target is None or new is None or new == old:
+        return None
+    rel = action.get("args", {}).get("path", str(target))
+    verb = "Create" if not target.exists() else "Edit"
+    preq = PermissionRequestRequired(
+        path=str(target), reason=f"{verb} {rel}", kind="edit", details=unified_diff(old, new, rel),
+    )
+    if approve(preq, action):
+        return None
+    return ActionOutcome(
+        "declined",
+        f"DECLINED by user: {describe_action(action)} -- the file was not changed. "
+        "Do not retry it; tell the user what you were trying to do and ask how to proceed.",
+    )
+
+
 def execute_with_approval(engine, action: dict, approve: Optional[ApproveFn]) -> ActionOutcome:
     """
     Runs one action. With `approve`, a PermissionRequestRequired is resolved
     inline (ask, approve by kind, retry once); without it, the request
     propagates to the caller as before (the web UI relies on that).
     """
+    if approve is not None and action.get("tool") in EDIT_TOOLS:
+        declined = _confirm_edit(action, approve)
+        if declined:
+            return declined
+
     try:
         result = engine.execute(action)
     except PermissionRequestRequired as preq:

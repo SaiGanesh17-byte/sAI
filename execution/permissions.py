@@ -7,10 +7,12 @@ class PermissionRequestRequired(Exception):
     #   "path"    -- a filesystem path to allow access to
     #   "command" -- an exact shell command to allow once
     #   "script"  -- an absolute script path, approved for its current content only
-    def __init__(self, path: str, reason: str, kind: str = "path"):
+    #   "edit"    -- a file edit; `details` holds a unified diff of the change
+    def __init__(self, path: str, reason: str, kind: str = "path", details: str = ""):
         self.path = path
         self.reason = reason
         self.kind = kind
+        self.details = details
         super().__init__(f"Permission required for '{path}': {reason}")
 
 class PermissionChecker:

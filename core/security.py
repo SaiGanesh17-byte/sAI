@@ -252,6 +252,63 @@ def consume_approved_command(command: str) -> bool:
 
 APPROVED_SCRIPTS = set()  # {(resolved_path, sha256_of_content)}
 
+# ---------------------------------------------------------------------------
+# Allow rules (Claude Code's "don't ask again"). Session rules come from
+# answering "a" at a prompt; persistent ones live in settings.json
+# ("allow_commands": ["pytest", "npm test", ...]).
+# ---------------------------------------------------------------------------
+SESSION_ALLOW_COMMAND_PREFIXES = set()
+_SESSION_STATE = {"auto_edits": False}
+
+# A rule for "pytest" must never approve "pytest && rm -rf ~".
+_SHELL_OPERATORS = re.compile(r"[;&|`<>\n]|\$\(")
+
+
+def command_allow_prefix(command: str) -> str:
+    """The prefix an "always allow" answer covers: the program plus its
+    subcommand when there is one ("git push origin main" -> "git push")."""
+    tokens = (command or "").split()
+    if len(tokens) >= 2 and not tokens[1].startswith("-"):
+        return " ".join(tokens[:2])
+    return tokens[0] if tokens else ""
+
+
+def allow_command_prefix_for_session(prefix: str):
+    if prefix.strip():
+        SESSION_ALLOW_COMMAND_PREFIXES.add(prefix.strip())
+
+
+def is_command_allowed_by_rule(command: str) -> bool:
+    if not command or _SHELL_OPERATORS.search(command):
+        return False
+    from core.settings import load_settings
+    try:
+        persistent = load_settings().get("allow_commands") or []
+    except Exception:
+        persistent = []
+    tokens = command.split()
+    for rule in set(persistent) | SESSION_ALLOW_COMMAND_PREFIXES:
+        rule_tokens = str(rule).split()
+        if rule_tokens and tokens[:len(rule_tokens)] == rule_tokens:
+            return True
+    return False
+
+
+def set_session_auto_edits(enabled: bool):
+    _SESSION_STATE["auto_edits"] = bool(enabled)
+
+
+def edits_need_approval() -> bool:
+    """Edits are asked about unless auto-approved this session or by setting
+    ("edit_approval": "auto" -- Claude Code's acceptEdits mode)."""
+    if _SESSION_STATE["auto_edits"]:
+        return False
+    from core.settings import load_settings
+    try:
+        return load_settings().get("edit_approval", "ask") != "auto"
+    except Exception:
+        return True
+
 def _file_sha256(path: Path) -> Optional[str]:
     try:
         return hashlib.sha256(path.read_bytes()).hexdigest()

@@ -1,6 +1,6 @@
 import time
 from dataclasses import dataclass, field
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from core.kernel import kernel
 from core.events import event_bus, EventType
 from execution.permissions import PermissionChecker, PermissionRequestRequired
@@ -23,6 +23,13 @@ OUTPUT_PREVIEW_CHARS = 2000
 _DISPLAY_ARG_KEYS = ("path", "script_path", "command", "query", "pattern", "action", "expression", "operation")
 
 
+def _workspace_path(path_str: str):
+    from pathlib import Path
+    from core.security import get_current_workspace
+    target = Path(str(path_str)).expanduser()
+    return target if target.is_absolute() else get_current_workspace() / target
+
+
 def _display_args(args: Dict[str, Any]) -> Dict[str, Any]:
     shown = {k: args[k] for k in _DISPLAY_ARG_KEYS if args.get(k)}
     for bulk in ("content", "patch"):
@@ -36,7 +43,35 @@ class ExecutionEngine:
     Coordinates tool lookups from the registry and runs validation checks.
     """
     def __init__(self):
-        pass
+        # abs path -> mtime_ns when the agent last read (or itself wrote) it.
+        # Backs the read-before-edit rule: an agent may only change an existing
+        # file it has seen, and only if nobody changed it since.
+        self.file_versions: Dict[str, int] = {}
+
+    def _read_before_edit_error(self, tool_name: str, args: Dict[str, Any]) -> Optional[str]:
+        if tool_name not in ("write_file", "patch_file") or not args.get("path"):
+            return None
+        from core.settings import load_settings
+        if not load_settings().get("require_read_before_edit", True):
+            return None
+        target = _workspace_path(args["path"])
+        if not target.exists():
+            return None  # creating a new file needs no prior read
+        key = str(target.resolve())
+        seen = self.file_versions.get(key)
+        if seen is None:
+            return (f"Error: '{args['path']}' already exists and you haven't read it. "
+                    f"Use read_file on it first, then make your edit based on its current content.")
+        if target.stat().st_mtime_ns != seen:
+            return (f"Error: '{args['path']}' changed on disk since you last read it. "
+                    f"Read it again before editing.")
+        return None
+
+    def _remember_file_version(self, tool_name: str, args: Dict[str, Any]) -> None:
+        if tool_name in ("read_file", "write_file", "patch_file") and args.get("path"):
+            target = _workspace_path(args["path"])
+            if target.exists():
+                self.file_versions[str(target.resolve())] = target.stat().st_mtime_ns
 
     def execute(self, action: Dict[str, Any]) -> ToolResult:
         tool_name = action.get("tool")
@@ -86,10 +121,13 @@ class ExecutionEngine:
         start_time = time.time()
         try:
             from core.security import mask_secrets
-            stdout_content = mask_secrets(tool.execute(args))
+            guard_error = self._read_before_edit_error(tool_name, args)
+            stdout_content = guard_error or mask_secrets(tool.execute(args))
             duration_ms = (time.time() - start_time) * 1000
 
             success = not stdout_content.startswith("Error")
+            if success:
+                self._remember_file_version(tool_name, args)
             stderr_content = "" if success else stdout_content
 
             result = ToolResult(

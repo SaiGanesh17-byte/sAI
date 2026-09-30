@@ -152,11 +152,11 @@ class TerminalTool(BaseTool):
             return "Error: 'command' argument is required."
 
         # Check for destructive/risky actions and prompt permission gate
-        from core.security import consume_approved_command, find_risky_pattern
+        from core.security import consume_approved_command, find_risky_pattern, is_command_allowed_by_rule
         from execution.permissions import PermissionRequestRequired
 
         matched_pattern = find_risky_pattern(command)
-        if matched_pattern:
+        if matched_pattern and not is_command_allowed_by_rule(command):
             if not consume_approved_command(command):
                 raise PermissionRequestRequired(
                     path=command,

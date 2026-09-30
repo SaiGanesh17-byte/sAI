@@ -1,7 +1,55 @@
+import re
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict, Optional, Tuple
 from tools.base import BaseTool
 from core.security import validate_path, get_current_workspace
+
+_PATCH_BLOCK = re.compile(r"<<<<<<< SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>> REPLACE", re.DOTALL)
+
+
+def apply_search_replace(content: str, patch: str) -> Tuple[Optional[str], Optional[str]]:
+    """Applies Aider-style SEARCH/REPLACE blocks. Returns (new_content, None) or (None, error)."""
+    matches = _PATCH_BLOCK.findall(patch or "")
+    if not matches:
+        return None, "Error: No valid SEARCH/REPLACE blocks found in patch."
+    new_content = content
+    for search, replace in matches:
+        if search not in new_content:
+            return None, f"Error: Search block not found in file:\n{search}"
+        new_content = new_content.replace(search, replace, 1)
+    return new_content, None
+
+
+def resolve_in_workspace(path_str: str) -> Path:
+    target = Path(path_str).expanduser()
+    if not target.is_absolute():
+        target = get_current_workspace() / target
+    return target
+
+
+def preview_edit(tool_name: str, args: Dict[str, Any]) -> Tuple[Optional[Path], str, Optional[str], Optional[str]]:
+    """
+    Computes what a write_file/patch_file call *would* do, without writing:
+    (target_path, old_content, new_content, error). Used to show a diff
+    before asking the user to approve an edit.
+    """
+    path_str = args.get("path")
+    if not path_str:
+        return None, "", None, "Error: 'path' argument is required."
+    target = resolve_in_workspace(path_str)
+    old = ""
+    if target.exists() and target.is_file():
+        try:
+            old = target.read_text(encoding="utf-8", errors="ignore")
+        except Exception as e:
+            return target, "", None, f"Error reading file '{path_str}': {e}"
+    if tool_name == "write_file":
+        return target, old, args.get("content", ""), None
+    if not target.exists():
+        return target, "", None, f"Error: File '{path_str}' does not exist. Use write_file to create it first."
+    new, err = apply_search_replace(old, args.get("patch", ""))
+    return target, old, new, err
+
 
 class ReadFileTool(BaseTool):
     @property
@@ -162,18 +210,9 @@ class PatchFileTool(BaseTool):
 
         try:
             content = target_path.read_text(encoding="utf-8")
-            
-            import re
-            pattern = re.compile(r"<<<<<<< SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>> REPLACE", re.DOTALL)
-            matches = pattern.findall(patch)
-            if not matches:
-                return "Error: No valid SEARCH/REPLACE blocks found in patch."
-
-            new_content = content
-            for search, replace in matches:
-                if search not in new_content:
-                    return f"Error: Search block not found in file:\n{search}"
-                new_content = new_content.replace(search, replace, 1)
+            new_content, patch_error = apply_search_replace(content, patch)
+            if patch_error:
+                return patch_error
 
             try:
                 save_transaction_snapshot(session_id, abs_path_str, before_content, new_content)

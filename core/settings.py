@@ -18,6 +18,9 @@ DEFAULT_SETTINGS = {
     "agents_json_mode": True,
     "context_token_budget": 32000,
     "stream_responses": True,  # stream LLM output so the REPL can show text as it arrives
+    "require_read_before_edit": True,  # agents must read_file an existing file before changing it
+    "edit_approval": "ask",  # "ask": show a diff and confirm each edit; "auto": apply edits without asking
+    "allow_commands": [],  # command prefixes that never need approval, e.g. ["pytest", "npm test"]
     "agent_max_steps": 8,  # tool-use loop: max agent responses per agent turn
     "repo_map_token_budget": 1500,  # cap on the repo map included in every agent prompt
     "use_tool_calling": False,
