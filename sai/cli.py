@@ -6,6 +6,7 @@ user invoking `python3 app/main.py <flags>` would.
 """
 import sys
 from pathlib import Path
+from typing import Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -33,12 +34,24 @@ def default(
     ctx: typer.Context,
     continue_: bool = typer.Option(False, "--continue", "-c", help="Continue the most recent session in this folder."),
     resume: bool = typer.Option(False, "--resume", "-r", help="Pick an earlier session in this folder to resume."),
+    print_: Optional[str] = typer.Option(None, "--print", "-p", help="Run one request non-interactively and print the result."),
+    output_format: str = typer.Option("text", "--output-format", help="With -p: 'text' or 'json'."),
+    accept_edits: bool = typer.Option(False, "--accept-edits", help="With -p: apply file edits without asking."),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="With -p: no progress on stderr."),
 ):
     """With no subcommand, drops straight into the terminal REPL (same as `sai repl`)."""
-    if ctx.invoked_subcommand is None:
-        from app.repl import SaiRepl
+    if ctx.invoked_subcommand is not None:
+        return
+    if print_ is not None:
+        from app.headless import run_headless
 
-        SaiRepl(resume="continue" if continue_ else "pick" if resume else None).run()
+        stdin_text = None if sys.stdin.isatty() else sys.stdin.read()
+        raise typer.Exit(run_headless(print_, accept_edits=accept_edits, output_format=output_format,
+                                      stdin_text=stdin_text, quiet=quiet))
+
+    from app.repl import SaiRepl
+
+    SaiRepl(resume="continue" if continue_ else "pick" if resume else None).run()
 
 
 @app.command()
