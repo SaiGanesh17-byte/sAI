@@ -107,7 +107,16 @@ class PromptBuilder:
         else:
             conv_text = "No history."
 
-        prompt = f"""[SYSTEM CONTEXT & SERVICE REGISTRIES]{aider_directive}
+        from core.project_instructions import load_project_instructions
+        instructions, _ = load_project_instructions()
+        instructions_section = ""
+        if instructions:
+            instructions_section = (
+                "[PROJECT INSTRUCTIONS (SAI.md) -- follow these; they override defaults]\n"
+                f"{instructions}\n\n"
+            )
+
+        prompt = f"""{instructions_section}[SYSTEM CONTEXT & SERVICE REGISTRIES]{aider_directive}
 
 [PERSISTENT MEMORY GRAPH (GRAPHITI)]
 {graphiti_str}

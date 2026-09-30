@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import Dict, Any
 from tools.base import BaseTool
 
-WORKSPACE_ROOT = Path("/Users/saiganeshongolu/sAI").resolve()
 
 class PythonTool(BaseTool):
     @property
@@ -33,13 +32,15 @@ class PythonTool(BaseTool):
         if not script_path_str:
             return "Error: 'script_path' argument is required."
 
+        from core.security import get_current_workspace
+        workspace = get_current_workspace()
         target_path = Path(script_path_str)
         if not target_path.is_absolute():
-            target_path = WORKSPACE_ROOT / target_path
+            target_path = workspace / target_path
 
         try:
             resolved_target = target_path.resolve()
-            in_sandbox = resolved_target.parts[:len(WORKSPACE_ROOT.parts)] == WORKSPACE_ROOT.parts
+            in_sandbox = resolved_target.parts[:len(workspace.parts)] == workspace.parts
         except Exception:
             in_sandbox = False
 
@@ -71,7 +72,7 @@ class PythonTool(BaseTool):
         try:
             result = subprocess.run(
                 ["python3", str(target_path)],
-                cwd=str(WORKSPACE_ROOT),
+                cwd=str(workspace),
                 text=True,
                 capture_output=True,
                 timeout=15

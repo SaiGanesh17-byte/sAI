@@ -65,7 +65,7 @@ class SearchTool(BaseTool):
 import ast
 from pathlib import Path
 
-WORKSPACE_ROOT = Path("/Users/saiganeshongolu/sAI").resolve()
+from core.security import get_current_workspace
 
 class GrepAstTool(BaseTool):
     @property
@@ -96,8 +96,9 @@ class GrepAstTool(BaseTool):
             return "Error: 'pattern' argument is required."
 
         matches = []
+        root = get_current_workspace()
         # Walk Python files
-        for path in WORKSPACE_ROOT.rglob("*.py"):
+        for path in root.rglob("*.py"):
             if "venv" in path.parts or ".git" in path.parts:
                 continue
             try:
@@ -105,19 +106,19 @@ class GrepAstTool(BaseTool):
                 for child in ast.walk(node):
                     if isinstance(child, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)):
                         if pattern in child.name.lower():
-                            matches.append(f"File: {path.relative_to(WORKSPACE_ROOT)} | Line {child.lineno} | {type(child).__name__}: {child.name}")
+                            matches.append(f"File: {path.relative_to(root)} | Line {child.lineno} | {type(child).__name__}: {child.name}")
             except Exception:
                 pass
                 
         # Walk Java, JS, TS, HTML, CSS files
-        for path in WORKSPACE_ROOT.rglob("*"):
+        for path in root.rglob("*"):
             if path.suffix in [".java", ".js", ".html", ".css", ".ts", ".xml"]:
                 if "venv" in path.parts or ".git" in path.parts or "node_modules" in path.parts:
                     continue
                 try:
                     for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                         if (("class " in line or "void " in line or "function " in line or "@" in line) and pattern in line.lower()):
-                            matches.append(f"File: {path.relative_to(WORKSPACE_ROOT)} | Line {i} | LineContent: {line.strip()}")
+                            matches.append(f"File: {path.relative_to(root)} | Line {i} | LineContent: {line.strip()}")
                 except Exception:
                     pass
 
@@ -158,7 +159,7 @@ class CodebaseSearchTool(BaseTool):
             repo_ctx = kernel.get_service("repository")
             if not repo_ctx:
                 from repository.context import RepositoryContext
-                repo_ctx = RepositoryContext.get_cached_context(WORKSPACE_ROOT)
+                repo_ctx = RepositoryContext.get_cached_context(get_current_workspace())
                 
             return repo_ctx.search_fts(query)
         except Exception as e:

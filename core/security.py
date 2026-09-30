@@ -41,12 +41,21 @@ def check_and_reset_halt() -> bool:
         return True
     return False
 
-def set_current_workspace(path_str: str):
+# Roots allowed in addition to the current workspace. Historically sAI's own
+# folder was always writable (the web UI still relies on that); a front end
+# that picks a real project workspace passes exclusive=True so agents working
+# in that project can't also edit sAI itself.
+_EXTRA_ALLOWED_ROOTS = [WORKSPACE_ROOT]
+
+
+def set_current_workspace(path_str: str, exclusive: bool = False):
     global CURRENT_WORKSPACE
     try:
         if path_str:
             resolved = Path(path_str).resolve()
             CURRENT_WORKSPACE = resolved
+            if exclusive:
+                _EXTRA_ALLOWED_ROOTS.clear()
     except Exception:
         pass
 
@@ -389,9 +398,10 @@ def validate_path(target_path: str | Path) -> bool:
         if resolved_target.parts[:len(active_ws.parts)] == active_ws.parts:
             return True
 
-        # Check default sandbox root
-        if resolved_target.parts[:len(WORKSPACE_ROOT.parts)] == WORKSPACE_ROOT.parts:
-            return True
+        # Additional allowed roots (sAI's own folder unless a front end opted out)
+        for root in _EXTRA_ALLOWED_ROOTS:
+            if resolved_target.parts[:len(root.parts)] == root.parts:
+                return True
             
         # 2. Check approved paths
         return is_path_approved(resolved_target)

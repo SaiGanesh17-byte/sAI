@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import Optional
 from core.kernel import kernel
+from core.security import get_current_workspace
 from llm.providers.nvidia import NvidiaProvider
 from llm.providers.openai import OpenAIProvider
 from llm.providers.ollama import OllamaProvider
@@ -24,7 +25,6 @@ from core.protocol import Message, MessageType, AgentResponse
 from core.task import Task
 from agents.registry import AgentRegistry
 
-WORKSPACE_ROOT = Path("/Users/saiganeshongolu/sAI").resolve()
 
 class Orchestrator:
     def __init__(self):
@@ -59,7 +59,7 @@ class Orchestrator:
             tool_reg.register(MathTool())
             kernel.register_service("tool_registry", tool_reg)
 
-            repo_ctx = RepositoryContext.get_cached_context(WORKSPACE_ROOT)
+            repo_ctx = RepositoryContext.get_cached_context(get_current_workspace())
             kernel.register_service("repository", repo_ctx)
         except Exception:
             pass
@@ -89,10 +89,11 @@ class Orchestrator:
             update_current_activity({"status": "thinking", "agent": agent.name, "tool": "", "path": "", "command": ""})
 
         if outcome.status == "ok" and tool_name in ["write_file", "patch_file"] and target_path:
-            RepositoryContext.invalidate_cache(WORKSPACE_ROOT)
+            workspace = get_current_workspace()
+            RepositoryContext.invalidate_cache(workspace)
             file_path = Path(target_path)
             if not file_path.is_absolute():
-                file_path = WORKSPACE_ROOT / file_path
+                file_path = workspace / file_path
             if file_path.exists():
                 if not hasattr(task, "linter_attempts"):
                     task.linter_attempts = {}
@@ -100,7 +101,7 @@ class Orchestrator:
                 for note in task.context.memory.notes:
                     if "Framework Context:" in note:
                         tech_stack = note.split("Framework Context:")[-1].split(".")[0].strip().lower()
-                linter_err = run_linter_checks(WORKSPACE_ROOT, tech_stack, file_path)
+                linter_err = run_linter_checks(workspace, tech_stack, file_path)
                 if linter_err:
                     attempts = task.linter_attempts.get(str(file_path), 0) + 1
                     task.linter_attempts[str(file_path)] = attempts

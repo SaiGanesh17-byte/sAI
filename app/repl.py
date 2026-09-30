@@ -22,9 +22,10 @@ from core.protocol import Message, MessageType
 from core.events import event_bus, EventType
 from core.security import (
     SESSION_ALLOW_COMMAND_PREFIXES, allow_command_prefix_for_session, approve_request, command_allow_prefix,
-    edits_need_approval, set_session_auto_edits,
+    edits_need_approval, set_current_workspace, set_session_auto_edits,
 )
 from core.settings import load_settings, save_settings
+from core.project_instructions import load_project_instructions
 from execution.permissions import PermissionRequestRequired
 from tools.terminal import TerminalTool
 from jev.decision import JevRouter
@@ -52,6 +53,8 @@ SHELL_COMMAND_PATTERN = re.compile(
 class SaiRepl:
     def __init__(self):
         self.console = Console()
+        # Before Orchestrator(): it indexes the workspace when it's built.
+        self.workspace = self._choose_workspace()
         self.orchestrator = Orchestrator()
         self.jev = JevRouter()
         # One Task/TaskContext lives for the whole session so conversation
@@ -189,11 +192,42 @@ class SaiRepl:
     # ------------------------------------------------------------------
     # Main loop
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Workspace = the folder sAI was launched from, like Claude Code. The
+    # first time in a folder, ask whether to trust it (agents can read and,
+    # with approval, change everything under it).
+    # ------------------------------------------------------------------
+    def _choose_workspace(self) -> Path:
+        cwd = Path.cwd().resolve()
+        settings = load_settings()
+        trusted = list(settings.get("trusted_folders") or [])
+        if str(cwd) not in trusted:
+            broad = cwd == Path.home().resolve() or cwd == Path(cwd.anchor)
+            self.console.print(f"\n[bold {VIOLET}]Do you trust the files in this folder?[/bold {VIOLET}]")
+            self.console.print(f"  [bold]{escape(str(cwd))}[/bold]")
+            self.console.print(f"  [{DIM}]sAI's agents will be able to read files here, and change them or run commands with your approval.[/{DIM}]")
+            if broad:
+                self.console.print(
+                    "  [bold yellow]⚠ This is your whole home folder (or the root of the disk).[/bold yellow] "
+                    f"[{DIM}]Usually you want to cd into a project folder first.[/{DIM}]"
+                )
+            answer = self.console.input("  [bold yellow]Trust this folder? \\[y/N][/bold yellow] ").strip().lower()
+            if answer not in ("y", "yes"):
+                self.console.print(f"[{DIM}]No problem -- cd into the project you want to work on and run `hey sAI` again.[/{DIM}]")
+                raise SystemExit(0)
+            trusted.append(str(cwd))
+            settings["trusted_folders"] = trusted
+            save_settings(settings)
+        set_current_workspace(str(cwd), exclusive=True)
+        return cwd
+
     def run(self):
         settings = load_settings()
+        _, instruction_files = load_project_instructions(self.workspace)
         render_banner(
             self.console,
-            cwd=Path.cwd(),
+            cwd=self.workspace,
+            instructions=", ".join(f.name if f.parent == self.workspace else str(f).replace(str(Path.home()), "~") for f in instruction_files),
             provider=settings.get("provider", "openrouter"),
             coder_model=settings.get("coder_model", ""),
             reasoner_model=settings.get("reasoner_model", ""),
@@ -361,6 +395,7 @@ class SaiRepl:
   [{TEAL}]/agents[/{TEAL}]   list all specialist agents and their roles
   [{TEAL}]/tokens[/{TEAL}]   show cumulative session token usage (alias: /cost)
   [{TEAL}]/clear[/{TEAL}]    reset this session's conversation and working memory
+  [{TEAL}]/init[/{TEAL}]     have sAI study this project and write SAI.md (instructions every agent follows)
   [{TEAL}]/permissions[/{TEAL}]  show approval rules · /permissions edits auto|ask · /permissions allow <cmd prefix>
   [{TEAL}]/help[/{TEAL}]     show this message
   [{TEAL}]!<cmd>[/{TEAL}]    run a shell command directly (e.g. !ls, !pytest)
@@ -390,6 +425,10 @@ class SaiRepl:
 """)
             return
 
+        if cmd == "/init":
+            self._run_init()
+            return
+
         if cmd == "/permissions":
             self._run_permissions_command(parts[1] if len(parts) > 1 else "")
             return
@@ -400,6 +439,26 @@ class SaiRepl:
             return
 
         self.console.print(f"[{DIM}]Unknown command '{cmd}'. Try /help.[/{DIM}]")
+
+    INIT_PROMPT = (
+        "Create (or improve, if it exists) the file SAI.md at the root of this workspace. Every sAI agent "
+        "reads it before working on this project, so it should hold what a new engineer needs on day one:\n"
+        "1. One or two lines on what the project is.\n"
+        "2. Exact commands to install, build, run, lint and test (only ones you can confirm from the files).\n"
+        "3. A short map of the important directories and entry points.\n"
+        "4. Conventions worth following (style, patterns, things to avoid).\n"
+        "Start with list_directory and read the README and package/build manifests before writing. "
+        "Keep it under 80 lines and don't invent commands you can't find evidence for."
+    )
+
+    def _run_init(self):
+        self.task.goal = self.INIT_PROMPT
+        before = self._token_snapshot()
+        try:
+            self._run_single_agent("Documentation")
+        finally:
+            self.activity.hide()
+        self._print_token_footer(before, "single_agent")
 
     def _run_permissions_command(self, arg: str):
         words = arg.split(maxsplit=1)

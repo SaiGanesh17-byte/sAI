@@ -4,7 +4,6 @@ from tools.python import PythonTool
 
 
 def test_run_benign_script_succeeds(tmp_workspace, monkeypatch):
-    monkeypatch.setattr("tools.python.WORKSPACE_ROOT", tmp_workspace.resolve())
     script = tmp_workspace / "benign.py"
     script.write_text("print('hello from script')\n", encoding="utf-8")
 
@@ -14,7 +13,6 @@ def test_run_benign_script_succeeds(tmp_workspace, monkeypatch):
 
 
 def test_run_risky_script_requires_approval(tmp_workspace, monkeypatch):
-    monkeypatch.setattr("tools.python.WORKSPACE_ROOT", tmp_workspace.resolve())
     script = tmp_workspace / "risky.py"
     script.write_text("import os\nos.system('echo hi')\n", encoding="utf-8")
 

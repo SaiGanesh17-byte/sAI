@@ -17,7 +17,7 @@ DIM = "grey62"
 ICON = "◆"
 
 
-def render_banner(console: Console, cwd: Path, provider: str, coder_model: str, reasoner_model: str, agent_count: int) -> None:
+def render_banner(console: Console, cwd: Path, provider: str, coder_model: str, reasoner_model: str, agent_count: int, instructions: str = "") -> None:
     header = Text()
     header.append(f"{ICON} ", style=f"bold {VIOLET}")
     header.append("sAI", style=f"bold {TEAL}")
@@ -26,8 +26,13 @@ def render_banner(console: Console, cwd: Path, provider: str, coder_model: str, 
     body = Text()
     body.append("\nHey, I'm sAI. Tell me what to build, fix, or explain.\n\n", style="bold")
 
-    body.append("cwd       ", style=DIM)
+    body.append("workspace ", style=DIM)
     body.append(f"{cwd}\n")
+    body.append("rules     ", style=DIM)
+    if instructions:
+        body.append(f"{instructions}\n")
+    else:
+        body.append("no SAI.md yet -- run /init to create one\n", style=DIM)
     body.append("provider  ", style=DIM)
     body.append(f"{provider}\n")
     body.append("models    ", style=DIM)
