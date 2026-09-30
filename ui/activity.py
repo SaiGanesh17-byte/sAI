@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional
 
 from rich.console import Console, Group
 from rich.live import Live
+from rich.markdown import Markdown
 from rich.markup import escape
 from rich.spinner import Spinner
 from rich.table import Table
@@ -97,18 +98,19 @@ class ActivityPrinter:
     def __init__(self, console: Console):
         self.console = console
 
-    def _bulleted(self, bullet_style: str, head: Text, body: Optional[Text] = None) -> None:
+    def _bulleted(self, bullet_style: str, head: Text, body=None) -> None:
         grid = Table.grid(padding=(0, 1))
         grid.add_column(no_wrap=True)
         grid.add_column()
         grid.add_row(Text(BULLET, style=bullet_style), head)
-        if body is not None and body.plain.strip():
+        if body is not None and (body.markup.strip() if isinstance(body, Markdown) else body.plain.strip()):
             grid.add_row("", body)
         self.console.print(grid)
 
     def agent_message(self, agent: str, text: str) -> None:
         self.console.print()
-        self._bulleted(VIOLET, Text(agent, style=f"bold {VIOLET}"), Text(text))
+        # Rendered as Markdown (code blocks, lists, bold) like Claude Code's replies.
+        self._bulleted(VIOLET, Text(agent, style=f"bold {VIOLET}"), Markdown(text or ""))
 
     def tool_call(self, label: str) -> None:
         self.console.print()

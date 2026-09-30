@@ -4,6 +4,7 @@ from rich.console import Console
 
 from app.repl import SaiRepl
 from ui.activity import ActivityIndicator, ActivityPrinter
+from ui.esc_watcher import EscWatcher
 from core.task import Task
 from execution.permissions import PermissionRequestRequired
 
@@ -22,6 +23,7 @@ def _repl(approve: bool):
     repl.activity = ActivityIndicator(repl.console)
     repl._current_agent = ""
     repl._open_tool = None
+    repl.esc = EscWatcher()
     repl._prompt_approval = lambda preq, action=None: approve
     return repl
 

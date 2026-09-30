@@ -34,6 +34,8 @@ from jev.decision import JevRouter
 from llm.tracker import token_tracker
 from ui.banner import render_banner, TEAL, VIOLET, DIM
 from agents.loop import LoopResult, run_agent_loop
+from ui.esc_watcher import EscWatcher
+from ui.input import InputReader, expand_file_mentions
 from ui.activity import (
     ActivityIndicator, ActivityPrinter, TOOL_LABELS, format_tokens, partial_json_string, tool_call_label, tool_result_summary,
 )
@@ -50,6 +52,19 @@ SHELL_COMMAND_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+
+
+SLASH_COMMANDS = {
+    "/help": "show all commands",
+    "/agents": "list specialist agents",
+    "/init": "write SAI.md for this project",
+    "/compact": "summarize history to free context",
+    "/resume": "continue an earlier session",
+    "/clear": "start a fresh session",
+    "/permissions": "view or change approval rules",
+    "/tokens": "session token usage",
+    "/cost": "session token usage",
+}
 
 
 class SaiRepl:
@@ -75,6 +90,7 @@ class SaiRepl:
         self._open_tool: Optional[tuple] = None
         self._stream_buffer = ""
         self._announced_tool: Optional[str] = None
+        self.esc = EscWatcher()
         self._register_events()
 
     # ------------------------------------------------------------------
@@ -151,7 +167,7 @@ class SaiRepl:
         session (for this kind of request), anything else = no. Edits show
         their diff first.
         """
-        with self.activity.paused():
+        with self.activity.paused(), self.esc.paused():
             # Show which call is asking, unless its ⏺ line is already on screen
             # (tools like Bash raise this from inside execute(), after TOOL_STARTED).
             if self._open_tool is None:
@@ -228,6 +244,7 @@ class SaiRepl:
         return cwd
 
     def run(self):
+        self.input = InputReader(self.workspace, SLASH_COMMANDS)
         settings = load_settings()
         _, instruction_files = load_project_instructions(self.workspace)
         render_banner(
@@ -260,6 +277,7 @@ class SaiRepl:
                 break
 
             try:
+                self.esc.start()
                 self._handle_turn(user_input)
             except KeyboardInterrupt:
                 # Like Claude Code: ctrl+c stops the current turn, not the app.
@@ -270,6 +288,7 @@ class SaiRepl:
                 self.activity.hide()
                 self.printer.note(f"[bold red]Unexpected error:[/bold red] {escape(str(e))}")
             finally:
+                self.esc.stop()
                 self.activity.hide()
                 self._save_session()
 
@@ -345,7 +364,9 @@ class SaiRepl:
 
         self.console.print(f"\n[{TEAL}]{top}[/{TEAL}]")
         try:
-            user_input = self.console.input(f"[{TEAL}]│[/{TEAL}] [bold {TEAL}]❯[/bold {TEAL}] ")
+            user_input = self.input.read(
+                lambda: self.console.input(f"[{TEAL}]│[/{TEAL}] [bold {TEAL}]❯[/bold {TEAL}] ")
+            )
         finally:
             self.console.print(f"[{TEAL}]{bottom}[/{TEAL}]")
 
@@ -353,7 +374,8 @@ class SaiRepl:
         total = token_tracker.input_tokens + token_tracker.output_tokens
         self.console.print(
             f"  [{DIM}]{len(self.orchestrator.agents)} agents · "
-            f"{settings.get('provider', 'openrouter')} · session {total:,} tok · /help[/{DIM}]"
+            f"{settings.get('provider', 'openrouter')} · session {total:,} tok · "
+            f"@ file · \\⏎ newline · /help[/{DIM}]"
         )
         return user_input
 
@@ -385,6 +407,19 @@ class SaiRepl:
             )
             return
 
+        # @path mentions attach file contents for the agents. Jev only routes,
+        # so it gets the short message plus the list of attached names.
+        goal, attached = expand_file_mentions(stripped, self.workspace)
+        for path in attached:
+            if path.is_file():
+                # Treat an attached file as read, like Claude Code's @-mentions,
+                # so the agent can edit it without a redundant read_file.
+                self.orchestrator.execution_engine.file_versions[str(path)] = path.stat().st_mtime_ns
+        if attached:
+            names = ", ".join(str(p.relative_to(self.workspace)) if p.is_relative_to(self.workspace) else str(p) for p in attached)
+            self.printer.note(f"[{DIM}]attached {escape(names)}[/{DIM}]")
+        routing_text = stripped + (f"\n(attached files: {names})" if attached else "")
+
         self._auto_compact_if_needed()
         before = self._token_snapshot()
         self._current_agent = ""
@@ -392,7 +427,7 @@ class SaiRepl:
 
         agent_names = [a.name for a in self.orchestrator.agents]
         agent_roles = {a.name: a.role for a in self.orchestrator.agents}
-        decision = self.jev.decide(stripped, agent_names, self._recent_turn_summaries(), agent_roles=agent_roles)
+        decision = self.jev.decide(routing_text, agent_names, self._recent_turn_summaries(), agent_roles=agent_roles)
 
         if decision.fallback:
             self.printer.note(f"[{DIM}]jev: routing to full team ({escape(decision.reasoning)})[/{DIM}]")
@@ -413,7 +448,7 @@ class SaiRepl:
             )
             self.task.context.conversation.add(msg)
         else:
-            self.task.goal = stripped
+            self.task.goal = goal
 
             if decision.route == "single_agent" and decision.agent:
                 self._run_single_agent(decision.agent)

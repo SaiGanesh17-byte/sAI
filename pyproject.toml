@@ -51,6 +51,7 @@ dependencies = [
     "tqdm",
     "watchdog",
     "psutil",
+    "prompt_toolkit>=3.0",
     "sympy",
 ]
 
