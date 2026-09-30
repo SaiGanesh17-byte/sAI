@@ -26,6 +26,7 @@ from core.security import (
 )
 from core.settings import load_settings, save_settings
 from core.project_instructions import load_project_instructions
+from core.custom_commands import load_custom_commands
 from core.session import SessionStore, compact_conversation, estimate_conversation_tokens
 from tools.todo import set_todos
 from core.kernel import kernel
@@ -245,7 +246,10 @@ class SaiRepl:
         return cwd
 
     def run(self):
-        self.input = InputReader(self.workspace, SLASH_COMMANDS)
+        commands = dict(SLASH_COMMANDS)
+        for name, c in load_custom_commands(self.workspace).items():
+            commands.setdefault(name, c.description)  # built-ins win on a name clash
+        self.input = InputReader(self.workspace, commands)
         settings = load_settings()
         _, instruction_files = load_project_instructions(self.workspace)
         render_banner(
@@ -509,6 +513,13 @@ class SaiRepl:
   [{TEAL}]!<cmd>[/{TEAL}]    run a shell command directly (e.g. !ls, !pytest)
   [{TEAL}]exit[/{TEAL}]      leave sAI
 """)
+            custom = load_custom_commands(self.workspace)
+            if custom:
+                self.console.print(f"[bold {VIOLET}]Your commands[/bold {VIOLET}] [{DIM}](.sai/commands/*.md)[/{DIM}]")
+                for c in custom.values():
+                    self.console.print(f"  [{TEAL}]{escape(c.name)}[/{TEAL}]  {escape(c.description)}")
+            else:
+                self.console.print(f"[{DIM}]Add your own commands as Markdown files in .sai/commands/ (this project) or ~/.sai/commands/.[/{DIM}]")
             return
 
         if cmd == "/agents":
@@ -554,6 +565,12 @@ class SaiRepl:
 
         if cmd == "/resume":
             self._pick_session()
+            return
+
+        custom = load_custom_commands(self.workspace).get(cmd)
+        if custom:
+            self.printer.note(f"[{DIM}]/{escape(custom.name[1:])} · {escape(str(custom.path).replace(str(Path.home()), '~'))}[/{DIM}]")
+            self._handle_turn(custom.render(parts[1] if len(parts) > 1 else ""))
             return
 
         self.console.print(f"[{DIM}]Unknown command '{cmd}'. Try /help.[/{DIM}]")

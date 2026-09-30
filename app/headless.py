@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from agents.loop import run_agent_loop
+from core.custom_commands import load_custom_commands
 from core.events import event_bus, EventType
 from core.orchestrator import Orchestrator
 from core.protocol import Message, MessageType
@@ -49,6 +50,14 @@ def run_headless(prompt: str, accept_edits: bool = False, output_format: str = "
     def progress(line: str):
         if not quiet:
             print(line, file=sys.stderr, flush=True)
+
+    if prompt.startswith("/"):
+        name, _, arguments = prompt.partition(" ")
+        custom = load_custom_commands(workspace).get(name.lower())
+        if custom is None:
+            print(f"Error: unknown command '{name}' (custom commands live in .sai/commands/*.md)", file=sys.stderr)
+            return 2
+        prompt = custom.render(arguments)
 
     if stdin_text:
         prompt = f"{prompt}\n\n[Piped input]\n{stdin_text[:MAX_STDIN_CHARS]}"
