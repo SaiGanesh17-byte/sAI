@@ -114,8 +114,17 @@ class LLMRuntime:
         })
 
         try:
-            response_content = provider.complete(messages, model=model_name, temperature=temperature, **kwargs)
-            
+            if settings.get("stream_responses", True):
+                # Stream so UIs can show text as it's generated (LLM_DELTA
+                # events); the caller still gets the complete string back.
+                chunks = []
+                for delta in provider.stream(messages, model=model_name, temperature=temperature, **kwargs):
+                    chunks.append(delta)
+                    event_bus.publish(EventType.LLM_DELTA, {"agent": task_kind, "delta": delta}, source="LLMRuntime")
+                response_content = "".join(chunks)
+            else:
+                response_content = provider.complete(messages, model=model_name, temperature=temperature, **kwargs)
+
             if not ResponseValidator.validate(response_content):
                 raise ValueError("Response failed structure validation checks.")
 

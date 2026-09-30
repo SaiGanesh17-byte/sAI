@@ -13,6 +13,7 @@ The "✻" line is a transient spinner pinned below the transcript: it names the
 agent currently working, and ticks elapsed time and the tokens spent in this
 turn. Everything else is printed as permanent transcript lines above it.
 """
+import re
 import time
 from typing import Any, Dict, Optional
 
@@ -129,15 +130,60 @@ class ActivityPrinter:
         self._elbow(Text.from_markup(markup))
 
 
+_ESCAPES = {'"': '"', "\\": "\\", "/": "/", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t"}
+
+
+def partial_json_string(text: str, key: str) -> Optional[str]:
+    """
+    Best-effort value of the string field `key` from a JSON object that may
+    still be streaming in -- e.g. '{"summary": "Reading app.py to fi' ->
+    'Reading app.py to fi'. None until the field has started.
+    """
+    marker = re.search(r'"%s"\s*:\s*"' % re.escape(key), text or "")
+    if not marker:
+        return None
+    out = []
+    i = marker.end()
+    while i < len(text):
+        ch = text[i]
+        if ch == '"':
+            break
+        if ch == "\\":
+            if i + 1 >= len(text):
+                break  # escape sequence not fully streamed yet
+            nxt = text[i + 1]
+            if nxt == "u":
+                hex_digits = text[i + 2:i + 6]
+                if len(hex_digits) < 4:
+                    break
+                try:
+                    out.append(chr(int(hex_digits, 16)))
+                except ValueError:
+                    pass
+                i += 6
+                continue
+            out.append(_ESCAPES.get(nxt, nxt))
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 class _SpinnerLine:
     """Renderable re-evaluated on every Live refresh, so the clock and token
     count tick even while the main thread is blocked on an LLM call."""
+
+    PREVIEW_MAX_LINES = 12
 
     def __init__(self, label: str):
         self.label = label
         self.started = time.time()
         self.tokens_at_start = token_tracker.input_tokens + token_tracker.output_tokens
         self.spinner = Spinner("sai_star", style=f"bold {VIOLET}")
+        self.preview_title: Optional[str] = None
+        self.preview_text = ""
+        self.streamed_chars = 0
 
     def __rich__(self):
         secs = int(time.time() - self.started)
@@ -145,13 +191,25 @@ class _SpinnerLine:
         stats = f"{secs}s"
         if spent:
             stats += f" · ↑ {format_tokens(spent)} tokens"
+        if self.streamed_chars:
+            # Live estimate while a response streams; real counts land in ↑ when it ends.
+            stats += f" · ↓ {format_tokens(self.streamed_chars // 4)} tokens"
         self.spinner.update(
             text=Text.from_markup(
                 f"[bold {VIOLET}]{escape(self.label)}…[/bold {VIOLET}] "
                 f"[{DIM}]({stats} · ctrl+c to interrupt)[/{DIM}]"
             )
         )
-        return Group(Text(""), self.spinner)
+        parts = []
+        if self.preview_title and self.preview_text.strip():
+            lines = self.preview_text.splitlines()[-self.PREVIEW_MAX_LINES:]
+            grid = Table.grid(padding=(0, 1))
+            grid.add_column(no_wrap=True)
+            grid.add_column()
+            grid.add_row(Text(BULLET, style=VIOLET), Text(self.preview_title, style=f"bold {VIOLET}"))
+            grid.add_row("", Text("\n".join(lines)))
+            parts += [Text(""), grid]
+        return Group(*parts, Text(""), self.spinner)
 
 
 class ActivityIndicator:
@@ -177,6 +235,19 @@ class ActivityIndicator:
         else:
             # Keep the turn's clock/token baseline; just change who/what.
             self._line.label = label
+
+    def stream_preview(self, title: str, text: str, streamed_chars: int) -> None:
+        """Show text that is still being generated above the spinner (not yet in the transcript)."""
+        if self._line is not None:
+            self._line.preview_title = title
+            self._line.preview_text = text
+            self._line.streamed_chars = streamed_chars
+
+    def clear_preview(self) -> None:
+        if self._line is not None:
+            self._line.preview_title = None
+            self._line.preview_text = ""
+            self._line.streamed_chars = 0
 
     def hide(self) -> None:
         if self._live is not None:

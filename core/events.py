@@ -11,6 +11,7 @@ class EventType(Enum):
     AGENT_FINISHED = "AGENT_FINISHED"
     LLM_REQUEST = "LLM_REQUEST"
     LLM_RESPONSE = "LLM_RESPONSE"
+    LLM_DELTA = "LLM_DELTA"  # one streamed chunk: {"agent", "delta"}
     TOOL_REQUEST = "TOOL_REQUEST"
     TOOL_STARTED = "TOOL_STARTED"
     TOOL_FINISHED = "TOOL_FINISHED"
@@ -51,7 +52,9 @@ class EventBus:
 
     def publish(self, event_type: EventType, data: Dict[str, Any], source: str = "System"):
         event = Event(event_type, data, source)
-        self.events_log.append(event)
+        # Stream chunks arrive by the thousand per turn; keep them out of the audit log.
+        if event_type is not EventType.LLM_DELTA:
+            self.events_log.append(event)
         
         event_name = event_type.value
         if event_name in self._listeners:

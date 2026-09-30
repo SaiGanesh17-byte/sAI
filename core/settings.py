@@ -17,6 +17,7 @@ DEFAULT_SETTINGS = {
     "jev_json_mode": True,
     "agents_json_mode": True,
     "context_token_budget": 32000,
+    "stream_responses": True,  # stream LLM output so the REPL can show text as it arrives
     "agent_max_steps": 8,  # tool-use loop: max agent responses per agent turn
     "repo_map_token_budget": 1500,  # cap on the repo map included in every agent prompt
     "use_tool_calling": False,

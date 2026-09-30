@@ -1,5 +1,5 @@
 from typing import List, Dict, Iterator, Any
-from llm.providers.base import BaseProvider
+from llm.providers.base import BaseProvider, stream_chat
 from openai import OpenAI
 from sai.config import settings
 
@@ -31,17 +31,7 @@ class NvidiaProvider(BaseProvider):
         return response.choices[0].message.content
 
     def stream(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.2, **kwargs) -> Iterator[str]:
-        client = self._get_client()
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            stream=True,
-            **kwargs
-        )
-        for chunk in response:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+        yield from stream_chat(self._get_client(), messages, model, temperature, **kwargs)
 
     def complete_with_tools(self, messages, model: str, tools, temperature: float = 0.2, **kwargs):
         client = self._get_client()

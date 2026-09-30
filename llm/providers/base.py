@@ -39,3 +39,39 @@ class BaseProvider(ABC):
         Check connection health.
         """
         pass
+
+
+def stream_chat(client, messages, model: str, temperature: float = 0.2, **kwargs) -> Iterator[str]:
+    """
+    Shared streaming for the OpenAI-compatible providers. Asks for a final usage
+    chunk (stream_options.include_usage) so token counts stay accurate; if a
+    server rejects that option, retries without it and estimates usage
+    (~4 chars/token) instead of silently recording zero.
+    """
+    from llm.tracker import token_tracker
+
+    try:
+        response = client.chat.completions.create(
+            model=model, messages=messages, temperature=temperature, stream=True,
+            stream_options={"include_usage": True}, **kwargs
+        )
+    except Exception:
+        response = client.chat.completions.create(
+            model=model, messages=messages, temperature=temperature, stream=True, **kwargs
+        )
+
+    produced = []
+    usage = None
+    for chunk in response:
+        if getattr(chunk, "usage", None):
+            usage = chunk.usage
+        if chunk.choices and chunk.choices[0].delta.content:
+            produced.append(chunk.choices[0].delta.content)
+            yield chunk.choices[0].delta.content
+
+    if usage:
+        token_tracker.add(usage.prompt_tokens, usage.completion_tokens)
+    else:
+        prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
+        token_tracker.add(prompt_chars // 4, len("".join(produced)) // 4)
+

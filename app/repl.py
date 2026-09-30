@@ -28,7 +28,9 @@ from jev.decision import JevRouter
 from llm.tracker import token_tracker
 from ui.banner import render_banner, TEAL, VIOLET, DIM
 from agents.loop import LoopResult, run_agent_loop
-from ui.activity import ActivityIndicator, ActivityPrinter, TOOL_LABELS, format_tokens, tool_call_label, tool_result_summary
+from ui.activity import (
+    ActivityIndicator, ActivityPrinter, TOOL_LABELS, format_tokens, partial_json_string, tool_call_label, tool_result_summary,
+)
 
 ROUTE_LABELS = {"direct_answer": "direct", "single_agent": "1 agent", "full_orchestrator": "full team"}
 
@@ -59,6 +61,7 @@ class SaiRepl:
         # that raises PermissionRequestRequired mid-run never finishes, and the
         # approval prompt needs to know its ⏺ line is already on screen.
         self._open_tool: Optional[tuple] = None
+        self._stream_buffer = ""
         self._register_events()
 
     # ------------------------------------------------------------------
@@ -72,6 +75,24 @@ class SaiRepl:
         event_bus.subscribe(EventType.TOOL_FINISHED, self._on_tool_finished)
         event_bus.subscribe(EventType.AGENT_FINISHED, self._on_agent_finished)
         event_bus.subscribe(EventType.ERROR, self._on_error)
+        event_bus.subscribe(EventType.LLM_REQUEST, self._on_llm_request)
+        event_bus.subscribe(EventType.LLM_DELTA, self._on_llm_delta)
+
+    # ------------------------------------------------------------------
+    # Streaming: agents answer in JSON, so rather than echo raw JSON, pull
+    # out the human-facing field as it arrives and show it above the spinner.
+    # It moves into the permanent transcript once the response completes.
+    # ------------------------------------------------------------------
+    def _on_llm_request(self, event):
+        self._stream_buffer = ""
+        self.activity.clear_preview()
+
+    def _on_llm_delta(self, event):
+        self._stream_buffer += event.data.get("delta", "")
+        agent = event.data.get("agent", "")
+        is_jev = agent == "Jev"
+        text = partial_json_string(self._stream_buffer, "answer" if is_jev else "summary")
+        self.activity.stream_preview("sAI" if is_jev else agent, text or "", len(self._stream_buffer))
 
     def _on_agent_started(self, event):
         self._current_agent = event.data.get("agent", "")
@@ -95,6 +116,7 @@ class SaiRepl:
             self.activity.show(f"{self._current_agent} thinking")
 
     def _on_agent_finished(self, event):
+        self.activity.clear_preview()
         agent = event.data.get("agent", "")
         msg = event.data.get("msg")
         summary = ""
@@ -234,6 +256,7 @@ class SaiRepl:
             self.printer.note(f"[{DIM}]jev → full team[/{DIM}]")
 
         if decision.route == "direct_answer":
+            self.activity.clear_preview()
             self.activity.hide()
             self.printer.agent_message("sAI", decision.answer)
             msg = Message(
