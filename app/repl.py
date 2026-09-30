@@ -26,6 +26,8 @@ from core.security import (
 )
 from core.settings import load_settings, save_settings
 from core.project_instructions import load_project_instructions
+from core.session import SessionStore, compact_conversation, estimate_conversation_tokens
+from core.kernel import kernel
 from execution.permissions import PermissionRequestRequired
 from tools.terminal import TerminalTool
 from jev.decision import JevRouter
@@ -51,11 +53,15 @@ SHELL_COMMAND_PATTERN = re.compile(
 
 
 class SaiRepl:
-    def __init__(self):
+    def __init__(self, resume: Optional[str] = None):
+        """resume: None (fresh session), "continue" (latest in this folder), or "pick"."""
         self.console = Console()
         # Before Orchestrator(): it indexes the workspace when it's built.
         self.workspace = self._choose_workspace()
         self.orchestrator = Orchestrator()
+        self.sessions = SessionStore(self.workspace)
+        self.session_id = SessionStore.new_id()
+        self._resume_mode = resume
         self.jev = JevRouter()
         # One Task/TaskContext lives for the whole session so conversation
         # history and working memory persist across turns.
@@ -233,6 +239,14 @@ class SaiRepl:
             reasoner_model=settings.get("reasoner_model", ""),
             agent_count=len(self.orchestrator.agents),
         )
+        if self._resume_mode == "continue":
+            latest = self.sessions.list()
+            if latest:
+                self._resume_session(latest[0])
+            else:
+                self.printer.note(f"[{DIM}]No earlier session in this folder -- starting fresh.[/{DIM}]")
+        elif self._resume_mode == "pick":
+            self._pick_session()
 
         while True:
             try:
@@ -257,6 +271,61 @@ class SaiRepl:
                 self.printer.note(f"[bold red]Unexpected error:[/bold red] {escape(str(e))}")
             finally:
                 self.activity.hide()
+                self._save_session()
+
+    # ------------------------------------------------------------------
+    # Sessions (--continue / --resume / /resume) and compaction (/compact)
+    # ------------------------------------------------------------------
+    def _save_session(self):
+        if not self.task.context.conversation.all():
+            return
+        try:
+            self.sessions.save(self.session_id, self.task)
+        except Exception as e:
+            self.printer.note(f"[{DIM}]Couldn't save this session: {escape(str(e))}[/{DIM}]")
+
+    def _resume_session(self, info):
+        if self.sessions.load_into(info.id, self.task):
+            self.session_id = info.id
+            self.printer.note(
+                f"Resumed [bold]{escape(info.title)}[/bold] "
+                f"[{DIM}]· {info.message_count} messages · {info.updated.astimezone():%b %d %H:%M}[/{DIM}]"
+            )
+
+    def _pick_session(self):
+        sessions = self.sessions.list()[:10]
+        if not sessions:
+            self.printer.note(f"[{DIM}]No saved sessions in this folder yet.[/{DIM}]")
+            return
+        self.console.print(f"\n[bold {VIOLET}]Resume a session[/bold {VIOLET}]")
+        for i, info in enumerate(sessions, 1):
+            self.console.print(
+                f"  [{TEAL}]{i:>2}[/{TEAL}]  {escape(info.title[:70])} "
+                f"[{DIM}]· {info.message_count} msgs · {info.updated.astimezone():%b %d %H:%M}[/{DIM}]"
+            )
+        choice = self.console.input(f"  [bold {TEAL}]Number (Enter to cancel):[/bold {TEAL}] ").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(sessions):
+            self._resume_session(sessions[int(choice) - 1])
+
+    def _compact(self, focus: str = "", automatic: bool = False):
+        self.activity.show("Compacting conversation")
+        try:
+            result = compact_conversation(self.task, kernel.get_service("llm_runtime"), focus=focus)
+        finally:
+            self.activity.hide()
+        if result is None:
+            if not automatic:
+                self.printer.note(f"[{DIM}]Nothing to compact yet.[/{DIM}]")
+            return
+        before, after = result
+        label = "Auto-compacted" if automatic else "Compacted"
+        self.printer.note(f"{label} conversation [{DIM}]· ~{format_tokens(before)} → ~{format_tokens(after)} tokens · summary kept in history[/{DIM}]")
+
+    def _auto_compact_if_needed(self):
+        settings = load_settings()
+        threshold = int(settings.get("auto_compact_tokens", 0) or 0) or int(settings.get("context_token_budget", 32000) * 0.6)
+        if estimate_conversation_tokens(self.task.context.conversation) > threshold:
+            self._compact(automatic=True)
 
     # ------------------------------------------------------------------
     # Boxed input prompt — a framed row instead of a bare arrow, plus a
@@ -316,6 +385,7 @@ class SaiRepl:
             )
             return
 
+        self._auto_compact_if_needed()
         before = self._token_snapshot()
         self._current_agent = ""
         self.activity.show("Jev routing")
@@ -394,7 +464,9 @@ class SaiRepl:
 [bold {VIOLET}]Commands[/bold {VIOLET}]
   [{TEAL}]/agents[/{TEAL}]   list all specialist agents and their roles
   [{TEAL}]/tokens[/{TEAL}]   show cumulative session token usage (alias: /cost)
-  [{TEAL}]/clear[/{TEAL}]    reset this session's conversation and working memory
+  [{TEAL}]/clear[/{TEAL}]    start a fresh session (the old one stays saved)
+  [{TEAL}]/compact[/{TEAL}]  summarize the conversation so far to free up context · /compact <what to focus on>
+  [{TEAL}]/resume[/{TEAL}]   pick an earlier session in this folder to continue
   [{TEAL}]/init[/{TEAL}]     have sAI study this project and write SAI.md (instructions every agent follows)
   [{TEAL}]/permissions[/{TEAL}]  show approval rules · /permissions edits auto|ask · /permissions allow <cmd prefix>
   [{TEAL}]/help[/{TEAL}]     show this message
@@ -435,7 +507,16 @@ class SaiRepl:
 
         if cmd == "/clear":
             self.task = Task(goal="")
-            self.console.print(f"[{DIM}]Session memory cleared (token usage above is unaffected).[/{DIM}]")
+            self.session_id = SessionStore.new_id()  # the old session stays saved for /resume
+            self.console.print(f"[{DIM}]Started a fresh session (the previous one is saved -- /resume to go back).[/{DIM}]")
+            return
+
+        if cmd == "/compact":
+            self._compact(focus=parts[1] if len(parts) > 1 else "")
+            return
+
+        if cmd == "/resume":
+            self._pick_session()
             return
 
         self.console.print(f"[{DIM}]Unknown command '{cmd}'. Try /help.[/{DIM}]")

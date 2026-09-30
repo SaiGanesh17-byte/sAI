@@ -22,6 +22,7 @@ DEFAULT_SETTINGS = {
     "edit_approval": "ask",  # "ask": show a diff and confirm each edit; "auto": apply edits without asking
     "allow_commands": [],  # command prefixes that never need approval, e.g. ["pytest", "npm test"]
     "agent_max_steps": 8,  # tool-use loop: max agent responses per agent turn
+    "auto_compact_tokens": 0,  # summarize history past this many tokens (0 = 60% of context_token_budget)
     "repo_map_token_budget": 1500,  # cap on the repo map included in every agent prompt
     "use_tool_calling": False,
     "temperature": 0.2,

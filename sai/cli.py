@@ -29,12 +29,16 @@ def _run_main(argv: list[str]) -> None:
 
 
 @app.callback(invoke_without_command=True)
-def default(ctx: typer.Context):
+def default(
+    ctx: typer.Context,
+    continue_: bool = typer.Option(False, "--continue", "-c", help="Continue the most recent session in this folder."),
+    resume: bool = typer.Option(False, "--resume", "-r", help="Pick an earlier session in this folder to resume."),
+):
     """With no subcommand, drops straight into the terminal REPL (same as `sai repl`)."""
     if ctx.invoked_subcommand is None:
         from app.repl import SaiRepl
 
-        SaiRepl().run()
+        SaiRepl(resume="continue" if continue_ else "pick" if resume else None).run()
 
 
 @app.command()
