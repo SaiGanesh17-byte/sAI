@@ -2,8 +2,6 @@ from typing import Dict, Any
 from tools.base import BaseTool
 from memory.graphiti import GraphitiMemory
 
-# Global graphiti instance for session persistence
-_graphiti_instance = GraphitiMemory()
 
 class MemoryTool(BaseTool):
     @property
@@ -37,6 +35,9 @@ class MemoryTool(BaseTool):
         }
 
     def execute(self, args: Dict[str, Any]) -> str:
+        # Loaded per call for the CURRENT workspace -- a module-level instance was
+        # created at import time, before the workspace was even chosen.
+        _graphiti_instance = GraphitiMemory()
         action = args.get("action")
         text = args.get("text", "")
         

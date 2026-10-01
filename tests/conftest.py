@@ -72,3 +72,10 @@ def _isolate_spend_file(tmp_path, monkeypatch):
     """Keep tests from writing to the real .sai/spend.json (daily budget tracking)."""
     import llm.tracker as tracker
     monkeypatch.setattr(tracker, "SPEND_FILE", tmp_path / "spend.json")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_project_memory(tmp_path, monkeypatch):
+    """Keep tests from reading or writing the real per-project memory stores."""
+    import memory.graphiti as graphiti
+    monkeypatch.setattr(graphiti, "PROJECTS_ROOT", tmp_path / "projects")

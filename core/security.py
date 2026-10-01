@@ -320,8 +320,8 @@ def allow_mcp_tool_for_session(name: str):
 
 
 def is_mcp_tool_allowed(name: str) -> bool:
-    """settings allow_mcp_tools entries match exactly or as a prefix ending in '__'
-    (e.g. "mcp__github__" allows every tool from that server)."""
+    """settings allow_mcp_tools entries match exactly, as a prefix ending in '__'
+    ("mcp__github__" = every tool from that server), or as a glob ("mcp__github__list_*")."""
     if name in SESSION_ALLOWED_MCP_TOOLS:
         return True
     from core.settings import load_settings
@@ -329,7 +329,9 @@ def is_mcp_tool_allowed(name: str) -> bool:
         rules = load_settings().get("allow_mcp_tools") or []
     except Exception:
         rules = []
-    return any(name == r or (str(r).endswith("__") and name.startswith(str(r))) for r in rules)
+    import fnmatch
+    return any(name == r or (str(r).endswith("__") and name.startswith(str(r))) or fnmatch.fnmatch(name, str(r))
+               for r in rules)
 
 
 def set_session_auto_edits(enabled: bool):

@@ -191,6 +191,29 @@ class MCPServer:
         return f"Error: {text}" if result.get("isError") else text
 
 
+def resolve_env(env: Dict[str, str]) -> Dict[str, str]:
+    """
+    Env values may be "$(command)" -- run at startup, e.g. "$(gh auth token)" -- or
+    "${VAR}" from sAI's own environment, so secrets never need to sit in settings.json.
+    """
+    resolved = {}
+    for key, value in env.items():
+        value = str(value)
+        command = re.fullmatch(r"\$\((.+)\)", value.strip())
+        if command:
+            try:
+                out = subprocess.run(command.group(1), shell=True, capture_output=True, text=True, timeout=15)
+            except subprocess.TimeoutExpired:
+                raise MCPError(f"env {key}: `{command.group(1)}` timed out")
+            if out.returncode != 0 or not out.stdout.strip():
+                raise MCPError(f"env {key}: `{command.group(1)}` failed: {(out.stderr or out.stdout).strip()[:200]}")
+            value = out.stdout.strip()
+        else:
+            value = re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), ""), value)
+        resolved[key] = value
+    return resolved
+
+
 def mcp_tool_name(server: str, tool: str) -> str:
     clean = lambda s: re.sub(r"[^A-Za-z0-9_-]", "_", s)
     return f"mcp__{clean(server)}__{clean(tool)}"
@@ -212,7 +235,10 @@ class MCPTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return f"[MCP server '{self.server.name}'] {self._description}"[:1000]
+        # First paragraph only: server descriptions run to several hundred tokens
+        # each and are repeated in every prompt of every agent that has the tool.
+        first = self._description.split("\n\n")[0].strip()
+        return f"[MCP {self.server.name}] {first[:300]}"
 
     @property
     def permissions(self) -> list:
@@ -267,7 +293,12 @@ class MCPManager:
             for name, spec in config.items():
                 if not isinstance(spec, dict) or spec.get("disabled") or not spec.get("command"):
                     continue
-                server = MCPServer(name, spec["command"], spec.get("args"), spec.get("env"), cwd=cwd)
+                try:
+                    env = resolve_env(spec.get("env") or {})
+                except MCPError as e:
+                    self.status[name] = ServerStatus(name, ok=False, error=str(e))
+                    continue
+                server = MCPServer(name, spec["command"], spec.get("args"), env, cwd=cwd)
                 try:
                     server.start(timeout=float(spec.get("startup_timeout", STARTUP_TIMEOUT)))
                     specs = server.list_tools()

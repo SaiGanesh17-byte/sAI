@@ -55,7 +55,7 @@ def test_manager_registers_tools_and_records_failures(manager, tmp_path):
     }, cwd=str(tmp_path))
     assert [t.name for t in tools] == ["mcp__fake__echo", "mcp__fake__add", "mcp__fake__fail"]
     assert tools[0].schema["required"] == ["text"]
-    assert "[MCP server 'fake']" in tools[0].description
+    assert tools[0].description == "[MCP fake] Echo text back"
     assert manager.status["fake"].ok and not manager.status["broken"].ok
     assert "boom" in manager.status["broken"].error or "exited" in manager.status["broken"].error
     assert "off" not in manager.status
@@ -120,3 +120,25 @@ def test_mcp_tool_through_engine_and_approval(manager, tmp_path):
             kernel.register_service("tool_registry", prev)
         else:
             kernel._services.pop("tool_registry", None)
+
+
+
+def test_env_values_from_commands_and_variables(monkeypatch):
+    from core.mcp import MCPError, resolve_env
+    monkeypatch.setenv("SAI_TEST_TOKEN", "abc123")
+    env = resolve_env({"A": "$(echo from-command)", "B": "${SAI_TEST_TOKEN}", "C": "plain"})
+    assert env == {"A": "from-command", "B": "abc123", "C": "plain"}
+    with pytest.raises(MCPError, match="failed"):
+        resolve_env({"T": "$(exit 3)"})
+
+
+def test_failed_env_command_marks_server_failed(manager, tmp_path):
+    manager.ensure_started({"gh": {"command": sys.executable, "args": [FAKE], "env": {"TOKEN": "$(exit 1)"}}}, cwd=str(tmp_path))
+    assert not manager.status["gh"].ok and "TOKEN" in manager.status["gh"].error
+
+
+def test_allow_rules_accept_globs(monkeypatch):
+    monkeypatch.setattr("core.settings.load_settings", lambda: {"allow_mcp_tools": ["mcp__github__list_*", "mcp__github__issue_read"]})
+    assert security.is_mcp_tool_allowed("mcp__github__list_issues")
+    assert security.is_mcp_tool_allowed("mcp__github__issue_read")
+    assert not security.is_mcp_tool_allowed("mcp__github__issue_write")

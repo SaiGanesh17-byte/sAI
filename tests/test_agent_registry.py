@@ -9,7 +9,7 @@ CONFIG_DIR = Path("agents/configs")
 REQUIRED_KEYS = {"name", "role", "model", "system_prompt"}
 
 EXPECTED_AGENT_NAMES = {
-    "Planner", "Architect", "Coder", "Debugger", "Reviewer", "Researcher", "DevOps", "Writer",
+    "Planner", "Architect", "Coder", "Debugger", "Reviewer", "Researcher", "DevOps", "Writer", "GitHub",
 }
 
 
@@ -58,7 +58,7 @@ KNOWN_TOOLS = {
 @pytest.mark.parametrize("config_path", sorted(CONFIG_DIR.glob("*.yaml")), ids=lambda p: p.name)
 def test_tool_lists_name_real_tools(config_path):
     tools = yaml.safe_load(open(config_path)).get("tools", ["*"])
-    unknown = [t for t in tools if "*" not in t and t not in KNOWN_TOOLS]
+    unknown = [t for t in tools if "*" not in t and not t.startswith("mcp__") and t not in KNOWN_TOOLS]
     assert not unknown, f"{config_path.name} lists tools that don't exist: {unknown}"
 
 
@@ -67,8 +67,13 @@ def test_read_only_agents_cannot_write_or_run_commands():
     for name in ("Reviewer", "Researcher", "Planner"):
         for tool in ("write_file", "edit_file", "patch_file", "execute_command", "git_operation"):
             assert not agents[name].allows_tool(tool), f"{name} should not have {tool}"
-    assert agents["Coder"].allows_tool("execute_command") and agents["Coder"].allows_tool("mcp__github__x")
-    assert agents["Researcher"].allows_tool("web_fetch") and agents["Researcher"].allows_tool("mcp__docs__search")
+    assert agents["Coder"].allows_tool("execute_command") and agents["Researcher"].allows_tool("web_fetch")
+    # "*" does not include MCP tools -- only explicit mcp__ patterns do (prompt-size control)
+    for name in ("Coder", "Debugger", "DevOps", "Researcher"):
+        assert not agents[name].allows_tool("mcp__github__list_issues"), name
+    assert agents["GitHub"].allows_tool("mcp__github__list_issues")
+    assert not agents["GitHub"].allows_tool("mcp__github__merge_pull_request")  # curated subset
+    assert not agents["GitHub"].allows_tool("write_file")
     assert not agents["Writer"].allows_tool("execute_command") and agents["Writer"].allows_tool("edit_file")
 
 

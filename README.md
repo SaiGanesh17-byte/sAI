@@ -121,7 +121,7 @@ Settings live in `.sai/settings.json` (created on first run). The useful ones:
 | `free_fallback_model` | `openai/gpt-4o-mini` | used when a free model fails or is rate-limited |
 | `edit_approval` | `"ask"` | `"auto"` applies edits without asking |
 | `allow_commands` | `[]` | command prefixes that never ask, e.g. `["pytest", "npm test"]` |
-| `mcp_servers` | `{}` | MCP servers to start -- see `core/mcp.py` |
+| `mcp_servers` | `{}` | MCP servers to start -- see `core/mcp.py` and the GitHub example below |
 | `hooks` | -- | shell commands on PreToolUse / PostToolUse / UserPromptSubmit / Stop -- see `core/hooks.py` |
 | `vision_model` | `openai/gpt-4o-mini` | used for any request with an attached image |
 | `daily_budget_usd` | `0` (off) | daily spending cap for paid models |
@@ -132,6 +132,28 @@ Free models are slower, sometimes unavailable, and limited to 50 requests/day on
 OpenRouter accounts without credits; sAI falls back to the paid model automatically.
 Requests to free endpoints may be logged by their providers -- set `use_free_models` to
 `false` if that matters for your code. See [docs/MODELS.md](docs/MODELS.md).
+
+## GitHub (MCP)
+
+The GitHub agent works with issues, PRs, commits, releases and Actions runs through GitHub's
+open-source [MCP server](https://github.com/github/github-mcp-server):
+
+```bash
+brew install github-mcp-server && gh auth login
+```
+
+```json
+"mcp_servers": {
+  "github": {"command": "github-mcp-server", "args": ["stdio", "--toolsets=default,actions"],
+             "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "$(gh auth token)"}}
+},
+"allow_mcp_tools": ["mcp__github__get_*", "mcp__github__list_*", "mcp__github__search_*",
+                    "mcp__github__issue_read", "mcp__github__pull_request_read",
+                    "mcp__github__actions_list", "mcp__github__actions_get"]
+```
+
+`$(command)` env values run at startup, so no token is stored in settings. Read-only tools
+above run without asking; anything that writes to GitHub asks first.
 
 ## Development
 

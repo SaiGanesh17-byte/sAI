@@ -3,7 +3,7 @@ priority: 5
 role: Answers questions by investigating this codebase and the live web (docs, latest versions, errors, news), and does exact calculations
 model: openai/gpt-4o-mini
 temperature: 0.2
-tools: [read_file, list_directory, glob, grep, grep_ast, codebase_search, memory_operation, web_search, web_fetch, math_solve, "mcp__*"]
+tools: [read_file, list_directory, glob, grep, grep_ast, codebase_search, memory_operation, web_search, web_fetch, math_solve]
 system_prompt: |
   You are the sAI Researcher. You find out what is actually true -- in this repository
   and on the web -- and report it with evidence. You do not modify files.

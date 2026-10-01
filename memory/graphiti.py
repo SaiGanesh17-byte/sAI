@@ -1,18 +1,41 @@
-import json
-from pathlib import Path
+"""
+Persistent facts and decisions, one store per workspace:
 
-MEMORY_FILE = Path("/Users/saiganeshongolu/sAI/.sai/memory.json")
+    ~/sAI/.sai/projects/<workspace-slug>/memory.json
+
+It used to be a single global file, so facts about one project (e.g. a React
+Native app's fonts and visual style) were injected into every other project's
+prompts -- an agent titled a calculator's README after the other app and
+guessed the wrong GitHub repository from it.
+"""
+import json
+import re
+from pathlib import Path
+from typing import Optional
+
+PROJECTS_ROOT = Path(__file__).resolve().parent.parent / ".sai" / "projects"
+LEGACY_FILE = Path(__file__).resolve().parent.parent / ".sai" / "memory.json"
+
+
+def workspace_memory_file(workspace: Optional[Path] = None) -> Path:
+    if workspace is None:
+        from core.security import get_current_workspace
+        workspace = get_current_workspace()
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", str(Path(workspace).resolve())).strip("-") or "root"
+    return PROJECTS_ROOT / slug / "memory.json"
+
 
 class GraphitiMemory:
-    def __init__(self):
+    def __init__(self, workspace: Optional[Path] = None):
+        self.path = workspace_memory_file(workspace)
         self.facts = []
         self.decisions = []
         self.load()
 
     def load(self):
         try:
-            if MEMORY_FILE.exists():
-                data = json.loads(MEMORY_FILE.read_text(encoding="utf-8"))
+            if self.path.exists():
+                data = json.loads(self.path.read_text(encoding="utf-8"))
                 self.facts = data.get("facts", [])
                 self.decisions = data.get("decisions", [])
         except Exception:
@@ -20,12 +43,12 @@ class GraphitiMemory:
 
     def save(self):
         try:
-            MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            self.path.parent.mkdir(parents=True, exist_ok=True)
             data = {
                 "facts": self.facts,
                 "decisions": self.decisions
             }
-            MEMORY_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            self.path.write_text(json.dumps(data, indent=2), encoding="utf-8")
         except Exception:
             pass
 

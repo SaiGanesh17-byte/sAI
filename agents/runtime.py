@@ -63,6 +63,31 @@ def environment_note() -> str:
     return "ENVIRONMENT: " + "; ".join(facts) + "."
 
 
+def repository_note() -> str:
+    """The workspace's git remote and branch, so no agent has to guess which GitHub
+    repository "this repo" is (one guessed from an unrelated project's memory)."""
+    import subprocess
+    from core.security import get_current_workspace
+
+    ws = str(get_current_workspace())
+
+    def git(*args):
+        try:
+            out = subprocess.run(["git", "-C", ws, *args], capture_output=True, text=True, timeout=5)
+            return out.stdout.strip() if out.returncode == 0 else ""
+        except Exception:
+            return ""
+
+    if not git("rev-parse", "--is-inside-work-tree"):
+        return "REPOSITORY: the workspace is not a git repository."
+    remote = git("remote", "get-url", "origin")
+    branch = git("symbolic-ref", "--short", "HEAD") or git("rev-parse", "--short", "HEAD")  # works before the first commit
+    match = re.search(r"github\.com[:/]([^/\s]+)/([^/\s]+?)(?:\.git)?$", remote)
+    where = f"GitHub repository {match.group(1)}/{match.group(2)} (https://github.com/{match.group(1)}/{match.group(2)})" \
+        if match else (f"git remote origin {remote}" if remote else "a git repository with no 'origin' remote")
+    return f"REPOSITORY: {where}; current branch: {branch or 'unknown'}. \"This repo\" means this one."
+
+
 def current_date_note() -> str:
     """Models assume it's still the year their training data ends -- e.g. searching
     for "latest Spring Boot version 2023" and answering with a 2023 release."""
@@ -90,7 +115,13 @@ class AgentRuntime:
         self.tools = list(tools or ["*"])
 
     def allows_tool(self, tool_name: str) -> bool:
-        return any(fnmatch.fnmatch(tool_name or "", pattern) for pattern in self.tools)
+        tool_name = tool_name or ""
+        if tool_name.startswith("mcp__"):
+            # MCP servers can add dozens of tools (GitHub's default set is ~12k prompt
+            # tokens), so "*" doesn't include them: an agent gets them only through an
+            # explicit mcp__ pattern in its YAML.
+            return any(p.startswith("mcp__") and fnmatch.fnmatch(tool_name, p) for p in self.tools)
+        return any(fnmatch.fnmatch(tool_name, pattern) for pattern in self.tools)
 
     def _available_tools(self, tool_reg) -> Dict[str, Any]:
         return {n: d for n, d in tool_reg.list_tools().items() if self.allows_tool(n)} if tool_reg else {}
@@ -140,6 +171,7 @@ AVAILABLE TOOLS:
 {tools_instruction}
 
 {environment_note()}
+{repository_note()}
 
 DOING THE WORK:
 - If the user asks you to fix, change, add, write or create something, DO it with your tools

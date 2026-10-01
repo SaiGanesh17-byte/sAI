@@ -11,9 +11,10 @@ instructions, model, and -- enforced in code -- which tools they can use.
 | **Coder** | 2 | `qwen/qwen3-coder-plus` | all (`*`) |
 | **Debugger** | 3 | `qwen/qwen3-coder-plus` | all (`*`) |
 | **Reviewer** | 4 | `qwen/qwen3-coder-plus` | read-only |
-| **Researcher** | 5 | `openai/gpt-4o-mini` | read/search, `web_search`, `web_fetch`, `math_solve`, `mcp__*` |
+| **Researcher** | 5 | `openai/gpt-4o-mini` | read/search, `web_search`, `web_fetch`, `math_solve` |
 | **DevOps** | 6 | `qwen/qwen3-coder-plus` | all (`*`) |
 | **Writer** | 7 | free | read/search, web, `write_file`/`edit_file`/`patch_file` -- no shell |
+| **GitHub** | 6.5 | `openai/gpt-4o-mini` | read/search, `git_operation`, 20 curated `mcp__github__*` tools (issues, PRs, commits, branches, releases, Actions) |
 
 "read/search" = `read_file`, `list_directory`, `glob`, `grep`, `grep_ast`,
 `codebase_search`, `memory_operation`.
@@ -76,7 +77,7 @@ priority: 8
 role: Translates UI strings and docs           # Jev routes on this line -- make it specific
 model: openai/gpt-4o-mini                     # any OpenRouter id; ':free' ids get the fallback chain
 temperature: 0.2
-tools: [read_file, glob, grep, edit_file]     # fnmatch patterns; "*" = all, "mcp__github__*" = one MCP server
+tools: [read_file, glob, grep, edit_file]     # fnmatch patterns; "*" = all built-in tools (NOT MCP tools)
 system_prompt: |
   You are the sAI Translator. ...
 ```
@@ -87,3 +88,10 @@ non-overlapping: Jev picks between them on the `role` line alone.
 Code that refers to agents by name: the orchestrator always starts with `Planner`;
 `Reviewer` output is schema-checked for `findings`; Architect/Researcher/Coder/Reviewer
 each write their own section of working memory; `/init` uses `Writer`.
+
+## MCP tools and prompt size
+
+`"*"` grants every built-in tool but **no MCP tools**: an agent only gets MCP tools through
+explicit `mcp__<server>__...` patterns. Each tool's description and schema is sent with every
+call the agent makes, and MCP servers are large -- GitHub's default tool set is 45 tools,
+~12k tokens. The GitHub agent lists 20 tools (~8k tokens); nothing else pays for them.
