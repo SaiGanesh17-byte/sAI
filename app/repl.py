@@ -22,7 +22,7 @@ from core.protocol import Message, MessageType
 from core.events import event_bus, EventType
 from core.security import (
     SESSION_ALLOW_COMMAND_PREFIXES, allow_command_prefix_for_session, approve_request, command_allow_prefix,
-    edits_need_approval, set_current_workspace, set_session_auto_edits,
+    allow_mcp_tool_for_session, edits_need_approval, set_current_workspace, set_session_auto_edits,
 )
 from core.settings import load_settings, save_settings
 from core.project_instructions import load_project_instructions
@@ -65,6 +65,7 @@ SLASH_COMMANDS = {
     "/resume": "continue an earlier session",
     "/clear": "start a fresh session",
     "/permissions": "view or change approval rules",
+    "/mcp": "connected MCP servers and tools",
     "/tokens": "session token usage",
     "/cost": "session token usage",
 }
@@ -205,6 +206,8 @@ class SaiRepl:
         if preq.kind == "command":
             prefix = command_allow_prefix(preq.path)
             return f"always allow `{prefix} …` this session" if prefix else None
+        if preq.kind == "mcp":
+            return f"always allow {preq.path} this session"
         return None
 
     @staticmethod
@@ -213,6 +216,8 @@ class SaiRepl:
             set_session_auto_edits(True)
         elif preq.kind == "command":
             allow_command_prefix_for_session(command_allow_prefix(preq.path))
+        elif preq.kind == "mcp":
+            allow_mcp_tool_for_session(preq.path)
 
     # ------------------------------------------------------------------
     # Main loop
@@ -519,6 +524,7 @@ class SaiRepl:
   [{TEAL}]/clear[/{TEAL}]    start a fresh session (the old one stays saved)
   [{TEAL}]/compact[/{TEAL}]  summarize the conversation so far to free up context · /compact <what to focus on>
   [{TEAL}]/resume[/{TEAL}]   pick an earlier session in this folder to continue
+  [{TEAL}]/mcp[/{TEAL}]      show connected MCP servers and their tools
   [{TEAL}]/init[/{TEAL}]     have sAI study this project and write SAI.md (instructions every agent follows)
   [{TEAL}]/permissions[/{TEAL}]  show approval rules · /permissions edits auto|ask · /permissions allow <cmd prefix>
   [{TEAL}]/help[/{TEAL}]     show this message
@@ -556,6 +562,10 @@ class SaiRepl:
 """)
             return
 
+        if cmd == "/mcp":
+            self._show_mcp()
+            return
+
         if cmd == "/init":
             self._run_init()
             return
@@ -586,6 +596,19 @@ class SaiRepl:
             return
 
         self.console.print(f"[{DIM}]Unknown command '{cmd}'. Try /help.[/{DIM}]")
+
+    def _show_mcp(self):
+        from core.mcp import mcp_manager
+        if not mcp_manager.status:
+            self.printer.note(f"[{DIM}]No MCP servers configured. Add them under \"mcp_servers\" in .sai/settings.json -- see core/mcp.py.[/{DIM}]")
+            return
+        self.console.print(f"\n[bold {VIOLET}]MCP servers[/bold {VIOLET}]")
+        for st in mcp_manager.status.values():
+            if st.ok:
+                tools = ", ".join(st.tools[:8]) + (f" +{len(st.tools) - 8} more" if len(st.tools) > 8 else "")
+                self.console.print(f"  [green]●[/green] [bold]{escape(st.name)}[/bold] [{DIM}]{len(st.tools)} tools · {escape(tools)}[/{DIM}]")
+            else:
+                self.console.print(f"  [red]●[/red] [bold]{escape(st.name)}[/bold] [red]failed:[/red] [{DIM}]{escape(st.error[:200])}[/{DIM}]")
 
     INIT_PROMPT = (
         "Create (or improve, if it exists) the file SAI.md at the root of this workspace. Every sAI agent "

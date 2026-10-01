@@ -8,6 +8,7 @@ class PermissionRequestRequired(Exception):
     #   "command" -- an exact shell command to allow once
     #   "script"  -- an absolute script path, approved for its current content only
     #   "edit"    -- a file edit; `details` holds a unified diff of the change
+    #   "mcp"     -- an MCP server tool call; `path` is the tool's sAI name
     def __init__(self, path: str, reason: str, kind: str = "path", details: str = ""):
         self.path = path
         self.reason = reason

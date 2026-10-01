@@ -303,6 +303,35 @@ def is_command_allowed_by_rule(command: str) -> bool:
     return False
 
 
+APPROVED_MCP_TOOLS = set()          # one-shot approvals
+SESSION_ALLOWED_MCP_TOOLS = set()   # "a" at the prompt
+
+
+def consume_approved_mcp_tool(name: str) -> bool:
+    with COMMANDS_LOCK:
+        if name in APPROVED_MCP_TOOLS:
+            APPROVED_MCP_TOOLS.discard(name)
+            return True
+    return False
+
+
+def allow_mcp_tool_for_session(name: str):
+    SESSION_ALLOWED_MCP_TOOLS.add(name)
+
+
+def is_mcp_tool_allowed(name: str) -> bool:
+    """settings allow_mcp_tools entries match exactly or as a prefix ending in '__'
+    (e.g. "mcp__github__" allows every tool from that server)."""
+    if name in SESSION_ALLOWED_MCP_TOOLS:
+        return True
+    from core.settings import load_settings
+    try:
+        rules = load_settings().get("allow_mcp_tools") or []
+    except Exception:
+        rules = []
+    return any(name == r or (str(r).endswith("__") and name.startswith(str(r))) for r in rules)
+
+
 def set_session_auto_edits(enabled: bool):
     _SESSION_STATE["auto_edits"] = bool(enabled)
 
@@ -352,6 +381,9 @@ def approve_request(path_str: str, kind: Optional[str] = None):
         approve_command(path_str)
     elif kind == "script":
         approve_script(path_str)
+    elif kind == "mcp":
+        with COMMANDS_LOCK:
+            APPROVED_MCP_TOOLS.add(path_str)
     elif kind == "path":
         try:
             APPROVED_PATHS.add(Path(path_str).resolve())

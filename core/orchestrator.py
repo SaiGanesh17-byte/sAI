@@ -69,6 +69,11 @@ class Orchestrator:
             tool_reg.register(BashOutputTool())
             tool_reg.register(KillShellTool())
             tool_reg.register(TodoWriteTool())
+            # MCP servers from settings start once per process; failures are
+            # recorded (see /mcp) rather than breaking startup.
+            from core.mcp import mcp_manager
+            for mcp_tool in mcp_manager.ensure_started(cwd=str(get_current_workspace())):
+                tool_reg.register(mcp_tool)
             kernel.register_service("tool_registry", tool_reg)
 
             repo_ctx = RepositoryContext.get_cached_context(get_current_workspace())

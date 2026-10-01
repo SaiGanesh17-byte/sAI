@@ -69,6 +69,10 @@ def tool_call_label(tool: str, args: Optional[Dict[str, Any]]) -> str:
     """'write_file', {'path': 'a.py'} -> 'Write(a.py)'."""
     args = args or {}
     name = TOOL_LABELS.get(tool, tool or "?")
+    if tool and tool.startswith("mcp__"):
+        # mcp__github__create_issue -> github:create_issue
+        _, server, mcp_tool = (tool.split("__", 2) + ["", ""])[:3]
+        name = f"{server}:{mcp_tool}"
     target = next(
         (str(args[k]) for k in ("path", "script_path", "command", "query", "pattern", "url", "shell_id", "action", "operation") if args.get(k)),
         "",
