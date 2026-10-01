@@ -26,6 +26,10 @@ def apply_exact_edit(content: str, old: str, new: str, replace_all: bool = False
         return None, "Error: 'old_string' must not be empty (use write_file to create a file)."
     if old == new:
         return None, "Error: 'old_string' and 'new_string' are identical -- nothing to change."
+    if old in new and new in content:
+        # An insertion whose result is already in the file: applying it again would
+        # duplicate code (two edits in one step both added the same function).
+        return None, "Error: this change is already applied -- the new text is already in the file. Re-read the file."
     count = content.count(old)
     if count == 0:
         return None, "Error: 'old_string' was not found in the file. Re-read the file and copy the exact text, including indentation."

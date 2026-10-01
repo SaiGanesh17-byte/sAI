@@ -204,3 +204,50 @@ def test_sources_not_added_when_already_cited_or_no_web_used():
     local = Agent([[_read("a.py")], []], "a.py defines add()")
     r2 = run_agent_loop(local, Task(goal="x").context, lambda a: ActionOutcome("ok", "see https://x.example in a comment"))
     assert "Sources consulted" not in r2.final_message.payload["response"]
+
+
+def test_nudge_when_code_shown_but_not_applied(tmp_workspace):
+    (tmp_workspace / "calc.py").write_text("def divide(a, b): ...")
+
+    class LazyThenApplies(ScriptedAgent):
+        def __init__(self):
+            super().__init__([[], [{"tool": "edit_file", "args": {"path": "t.py"}}], []])
+            self.tools = ["*"]
+
+        def allows_tool(self, tool):
+            return True
+
+        def run(self, context):
+            msg = super().run(context)
+            if not msg.payload["actions"]:
+                msg.payload["response"] = "Add these tests:\n```python\ndef test_x(): ...\n```" if len(self.seen_histories) == 1 else "Done."
+            return msg
+
+    task = Task(goal="x")
+    task.context.conversation.add(Message(sender="User", receiver="Debugger", type=MessageType.TASK,
+                                          payload={"content": "what edge cases should I test for calc.py? then write those as tests"}))
+    agent = LazyThenApplies()
+    result = run_agent_loop(agent, task.context, lambda a: ActionOutcome("ok", "Success"))
+    assert len(agent.seen_histories) == 3  # nudged once, then it applied and finished
+    assert any("changed no files" in h for h in agent.seen_histories[1])
+    assert result.final_message.payload["response"] == "Done."
+
+
+def test_no_nudge_for_questions_or_no_edit_requests(tmp_workspace):
+    class ShowsCode(ScriptedAgent):
+        def allows_tool(self, tool):
+            return True
+
+        def run(self, context):
+            msg = super().run(context)
+            msg.payload["response"] = "```python\nx = 1\n```"
+            return msg
+
+    (tmp_workspace / "calc.py").write_text("x = 1")
+    for request in ("how do I reverse a list?", "rename add in calc.py to plus. Don't edit anything, just tell me",
+                    "explain this error from app.py and how to fix it"):  # app.py isn't in the workspace
+        task = Task(goal="x")
+        task.context.conversation.add(Message(sender="User", receiver="Coder", type=MessageType.TASK, payload={"content": request}))
+        agent = ShowsCode([[]])
+        run_agent_loop(agent, task.context, lambda a: ActionOutcome("ok", ""))
+        assert len(agent.seen_histories) == 1, request

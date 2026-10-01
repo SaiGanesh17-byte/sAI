@@ -219,6 +219,18 @@ def run_agent_loop(
     """
     since_index = len(context.conversation.all())
     result = _loop(agent, context, execute_action, max_steps, source, is_halted)
+    if result.stop_reason == "done" and _shows_code_instead_of_applying(agent, context.conversation.all(), since_index,
+                                                                         result.final_message):
+        # Once: the user asked for a change, the agent printed code and changed nothing.
+        context.conversation.add(Message(
+            sender="System", receiver=agent.name, type=MessageType.TOOL_RESULT,
+            payload={"content": "[You showed code but changed no files, and the user asked you to make the change. "
+                                "Apply it now with edit_file/write_file (read the file first), then verify. If the "
+                                "change doesn't belong in a workspace file, or you truly cannot, give your full "
+                                "answer in \"response\" again and say why.]"},
+        ))
+        remaining = max(2, max_steps - result.steps)
+        result = _loop(agent, context, execute_action, remaining, source, is_halted)
     reason = result.stop_reason
     if reason == "done" and not _has_answer(result.final_message):
         reason = "no_response"
@@ -226,6 +238,34 @@ def run_agent_loop(
         result.final_message = _wrap_up(agent, context, reason, source, since_index)
     _ensure_sources(result.final_message, context.conversation.all()[since_index:])
     return result
+
+
+_ACTION_REQUEST = re.compile(r"\b(write|add|fix|create|implement|update|change|refactor|rename|apply|make)\b", re.I)
+_NO_EDIT_REQUEST = re.compile(r"don'?t (edit|change|modify|touch)|do not (edit|change|modify)|just (tell|explain|show|list)|"
+                              r"read[- ]only|without (editing|changing)", re.I)
+
+
+def _shows_code_instead_of_applying(agent, messages, since_index: int, final_message) -> bool:
+    if not (hasattr(agent, "allows_tool") and agent.allows_tool("edit_file")):
+        return False
+    response = str(((getattr(final_message, "payload", None) or {}).get("response")) or "")
+    if "```" not in response:
+        return False
+    request = next((str((m.payload or {}).get("content", "")) for m in reversed(messages)
+                    if getattr(m, "sender", "") == "User"), "")
+    request = request.split("\n\n[Attached")[0]  # ignore attached file contents
+    if not _ACTION_REQUEST.search(request) or _NO_EDIT_REQUEST.search(request):
+        return False
+    # Only when the change is about a file that actually exists here -- "how do I fix
+    # this pasted error from app.py" (no app.py in the workspace) is a question.
+    from core.security import get_current_workspace
+    workspace = get_current_workspace()
+    names = set(re.findall(r"[\w./-]+\.[A-Za-z]{1,5}\b", request + "\n" + response))
+    if not any((workspace / n).is_file() for n in names if not n.startswith(("http", "/"))):
+        return False
+    changed = re.compile(r"^\[(write_file|edit_file|patch_file)\(.*?\) -> ok\]")
+    return not any(changed.match(str((getattr(m, "payload", {}) or {}).get("content", "")))
+                   for m in messages[since_index:])
 
 
 _URL = re.compile(r"https?://[^\s)\]>\"'`]+")

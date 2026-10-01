@@ -223,3 +223,9 @@ def test_background_commands_get_the_same_safety_checks(tmp_workspace):
     with pytest.raises(PermissionRequestRequired):
         TerminalTool().execute({"command": "sudo sleep 1", "run_in_background": True})
     assert TerminalTool().execute({"command": "cat ~/.zshrc", "run_in_background": True}).startswith("Security Error")
+
+
+def test_edit_that_is_already_applied_is_rejected():
+    content = "def divide(a, b):\n    return a / b\n\ndef multiply(a, b):\n    return a * b\n"
+    new, err = apply_exact_edit(content, "    return a / b\n", "    return a / b\n\ndef multiply(a, b):\n    return a * b\n")
+    assert new is None and "already applied" in err
