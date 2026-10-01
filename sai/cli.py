@@ -22,6 +22,24 @@ app = typer.Typer(
 )
 
 
+def _read_piped_stdin() -> Optional[str]:
+    """
+    Only read stdin when something was actually piped or redirected in
+    (`cat log | sai -p ...`, `sai -p ... < file`). Under cron, CI, or a parent
+    process that leaves stdin open as a socket, a blind read() never returns.
+    """
+    import os
+    import stat
+
+    try:
+        mode = os.fstat(sys.stdin.fileno()).st_mode
+    except (OSError, ValueError):
+        return None
+    if stat.S_ISFIFO(mode) or stat.S_ISREG(mode):
+        return sys.stdin.read()
+    return None
+
+
 def _run_main(argv: list[str]) -> None:
     from app.main import main as app_main
 
@@ -45,7 +63,7 @@ def default(
     if print_ is not None:
         from app.headless import run_headless
 
-        stdin_text = None if sys.stdin.isatty() else sys.stdin.read()
+        stdin_text = _read_piped_stdin()
         raise typer.Exit(run_headless(print_, accept_edits=accept_edits, output_format=output_format,
                                       stdin_text=stdin_text, quiet=quiet))
 

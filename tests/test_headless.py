@@ -72,3 +72,34 @@ def test_piped_stdin_is_included(headless_env, capsys):
     install(lambda kind, p: {"route": "direct_answer", "answer": "ok", "reasoning": "", "confidence": 1})
     _run(capsys, "explain this", stdin_text="Traceback: ZeroDivisionError")
     assert "ZeroDivisionError" in prompts[0][1]
+
+
+def test_stdin_read_only_for_pipes_and_files(tmp_path, monkeypatch):
+    import io
+    import os
+    import socket
+    import sys
+    from sai.cli import _read_piped_stdin
+
+    r, w = os.pipe()
+    os.write(w, b"piped data")
+    os.close(w)
+    with os.fdopen(r) as pipe_in:
+        monkeypatch.setattr(sys, "stdin", pipe_in)
+        assert _read_piped_stdin() == "piped data"
+
+    f = tmp_path / "in.txt"
+    f.write_text("file data")
+    with open(f) as file_in:
+        monkeypatch.setattr(sys, "stdin", file_in)
+        assert _read_piped_stdin() == "file data"
+
+    # An open socket with no EOF (cron/CI/tool runners) must not block.
+    a, b = socket.socketpair()
+    try:
+        with a.makefile("r") as sock_in:
+            monkeypatch.setattr(sys, "stdin", sock_in)
+            assert _read_piped_stdin() is None
+    finally:
+        a.close()
+        b.close()
