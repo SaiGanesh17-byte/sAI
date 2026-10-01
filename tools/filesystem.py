@@ -107,6 +107,15 @@ class ReadFileTool(BaseTool):
         if not target_path.exists():
             return f"Error: File '{path_str}' does not exist."
 
+        from ui.input import is_image, MAX_IMAGE_BYTES
+        if is_image(target_path):
+            # The agent loop attaches the image itself to the next model call
+            # (agents/loop.py), so the model sees it rather than undecodable bytes.
+            size = target_path.stat().st_size
+            if size > MAX_IMAGE_BYTES:
+                return f"Error: image '{path_str}' is {size // 1024} KB; the limit is {MAX_IMAGE_BYTES // 1024 // 1024} MB."
+            return f"[Image file '{path_str}' ({size // 1024} KB) -- it is attached; look at it to answer.]"
+
         try:
             return target_path.read_text(encoding="utf-8")
         except Exception as e:

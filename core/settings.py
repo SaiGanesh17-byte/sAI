@@ -32,6 +32,7 @@ DEFAULT_SETTINGS = {
     "allow_commands": [],  # command prefixes that never need approval, e.g. ["pytest", "npm test"]
     "mcp_servers": {},  # name -> {"command", "args", "env", "disabled"}; see core/mcp.py
     "allow_mcp_tools": [],  # MCP tools that run without asking, e.g. ["mcp__github__"] for a whole server
+    "web_search_fallback": True,  # when DuckDuckGo fails, search via OpenRouter's web plugin (~$0.007/search)
     "web_fetch_allow_private": False,  # let web_fetch reach localhost/LAN addresses (off: blocks SSRF)
     "daily_budget_usd": 0,  # stop paid model calls once today's spend reaches this (0 = no cap)
     "agent_max_steps": 12,  # tool-use loop: max agent responses per agent turn

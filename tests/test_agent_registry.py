@@ -93,5 +93,5 @@ def test_agent_prompt_lists_only_allowed_tools(fake_llm_runtime, tmp_workspace):
     reviewer = next(a for a in orch.agents if a.name == "Reviewer")
     reviewer.run(Task(goal="review").context)
     prompt = fake_llm_runtime.calls[-1]["prompt"]
-    tools_section = prompt.split("AVAILABLE TOOLS:")[1].split("THE USER'S EXPLICIT INSTRUCTIONS")[0]
+    tools_section = prompt.split("AVAILABLE TOOLS:")[1].split("ENVIRONMENT:")[0]
     assert "read_file" in tools_section and "write_file" not in tools_section and "execute_command" not in tools_section

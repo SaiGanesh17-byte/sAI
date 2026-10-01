@@ -14,8 +14,8 @@ keychain (`settings.json` just says `"keyring_secured"`).
 
 | Work | Model (default) | Set in |
 |---|---|---|
-| Coder, Debugger, DevOps | `qwen/qwen3-coder-plus` | agent YAML `model:` |
-| Architect, Reviewer, Researcher | `openai/gpt-4o-mini` | agent YAML `model:` |
+| Coder, Debugger, DevOps, Reviewer | `qwen/qwen3-coder-plus` | agent YAML `model:` |
+| Architect, Researcher | `openai/gpt-4o-mini` | agent YAML `model:` |
 | Planner, Writer | free model | agent YAML `model:` |
 | Jev routing (every message) | free model | `jev_model` |
 | `/compact` summaries | free model | `compact_model` |

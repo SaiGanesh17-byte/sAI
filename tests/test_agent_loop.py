@@ -168,3 +168,39 @@ def test_work_ledger_reports_only_what_actually_happened():
     assert "Edits that did NOT apply: calc.py" in ledger
     assert "`python3 -m pytest` -> ok" in ledger
     assert work_ledger([]).startswith("Files you actually changed this turn: NONE")
+
+
+def test_sources_appended_when_web_answer_cites_none():
+    class WebAgent(ScriptedAgent):
+        def run(self, context):
+            msg = super().run(context)
+            if not msg.payload["actions"]:
+                msg.payload["response"] = "Python 3.14.8 is the latest."
+            return msg
+
+    agent = WebAgent([[{"tool": "web_search", "args": {"query": "python"}}], []])
+    out = "Title: Python\nURL: https://www.python.org/downloads/\nBody: 3.14.8\n---\nURL: https://docs.python.org/3/whatsnew/"
+    result = run_agent_loop(agent, Task(goal="x").context, lambda a: ActionOutcome("ok", out))
+    response = result.final_message.payload["response"]
+    assert response.endswith("Sources consulted:\n- https://www.python.org/downloads/\n- https://docs.python.org/3/whatsnew/")
+
+
+def test_sources_not_added_when_already_cited_or_no_web_used():
+    class Agent(ScriptedAgent):
+        def __init__(self, steps, text):
+            super().__init__(steps)
+            self.text = text
+
+        def run(self, context):
+            msg = super().run(context)
+            if not msg.payload["actions"]:
+                msg.payload["response"] = self.text
+            return msg
+
+    cited = Agent([[{"tool": "web_search", "args": {"query": "q"}}], []], "See https://nodejs.org")
+    r1 = run_agent_loop(cited, Task(goal="x").context, lambda a: ActionOutcome("ok", "URL: https://other.example"))
+    assert "Sources consulted" not in r1.final_message.payload["response"]
+
+    local = Agent([[_read("a.py")], []], "a.py defines add()")
+    r2 = run_agent_loop(local, Task(goal="x").context, lambda a: ActionOutcome("ok", "see https://x.example in a comment"))
+    assert "Sources consulted" not in r2.final_message.payload["response"]

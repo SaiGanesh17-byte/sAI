@@ -139,7 +139,7 @@
   persona: business-analyst
   prompt: "Write user stories with acceptance criteria for a password reset feature."
   expect:
-    contains_any: ["as a", "who:", "as an"]          # "As a <user> I want..." or Who/What/Why
+    contains_any: ["as a", "as an", "who"]           # "As a <user> I want..." or a Who/What/Why layout
     contains_any_2: ["acceptance criteria", "given"]
 
 - id: ba-summarize-project
@@ -200,3 +200,73 @@
   expect:
     file_unchanged: [app/store.py, app/cli.py, app/boot.py]
     contains_all: ["store.py", "cli.py", "boot.py"]
+
+# --- regressions from a real interactive session (2026-10-01) ---------------------
+
+- id: dev-fix-it-short
+  persona: developer
+  prompt: "the test in test_calc.py fails, fix it"
+  accept_edits: true
+  files:
+    calc.py: |
+      def add(a, b):
+          return a - b
+
+      def divide(a, b):
+          return a / b
+    test_calc.py: |
+      from calc import add
+      def test_add():
+          assert add(2, 3) == 5
+  expect:
+    file_contains: {calc.py: "a + b"}       # it must APPLY the fix, not just show it
+
+- id: tester-edge-cases-then-write
+  persona: tester
+  prompt: "what edge cases should I test for divide() in calc.py? then write those as tests in test_divide.py"
+  accept_edits: true
+  files:
+    calc.py: |
+      def divide(a, b):
+          if b == 0:
+              raise ValueError("Cannot divide by zero")
+          return a / b
+  expect:
+    file_exists: [test_divide.py]
+    file_contains: {test_divide.py: ["def test_", "ValueError"]}   # matches the CURRENT code
+
+- id: dev-scope-only-what-asked
+  persona: developer
+  prompt: "add a multiply function to calc.py"
+  accept_edits: true
+  files:
+    calc.py: |
+      def add(a, b):
+          return a - b
+
+      def divide(a, b):
+          return a / b
+  expect:
+    file_contains: {calc.py: ["def multiply", "return a - b", "return a / b"]}   # nothing else touched
+
+- id: vision-read-image-without-at
+  persona: prod-support
+  prompt: "what does error.png say?"
+  images:
+    error.png: "Fatal error E-7731\nCould not open orbit_v2.yaml"
+  expect:
+    contains_all: ["E-7731", "orbit_v2.yaml"]
+
+- id: reviewer-review
+  persona: developer
+  prompt: "review calc.py for bugs"
+  files:
+    calc.py: |
+      def add(a, b):
+          return a - b
+
+      def divide(a, b):
+          return a / b
+  expect:
+    contains_any: ["subtract", "a - b", "minus"]
+    contains_any_2: ["zero"]

@@ -40,6 +40,13 @@ class LoopResult:
     declined: List[str] = field(default_factory=list)
 
 
+def _read_image_path(action: dict, outcome: "ActionOutcome") -> Optional[str]:
+    if action.get("tool") != "read_file" or outcome.status != "ok" or not outcome.content.startswith("[Image file"):
+        return None
+    from tools.filesystem import resolve_in_workspace
+    return str(resolve_in_workspace(str((action.get("args") or {}).get("path", ""))).resolve())
+
+
 def describe_action(action: dict) -> str:
     args = action.get("args", {}) or {}
     target = args.get("path") or args.get("script_path") or args.get("command") or args.get("query") or ""
@@ -217,7 +224,34 @@ def run_agent_loop(
         reason = "no_response"
     if reason in ("repeating", "max_steps", "no_response") or (reason == "declined" and wrap_up_on_decline):
         result.final_message = _wrap_up(agent, context, reason, source, since_index)
+    _ensure_sources(result.final_message, context.conversation.all()[since_index:])
     return result
+
+
+_URL = re.compile(r"https?://[^\s)\]>\"'`]+")
+
+
+def _ensure_sources(message, messages) -> None:
+    """
+    An answer built on web results must say where it came from. Models skip the
+    'Sources:' list now and then despite instructions, so if this turn ran
+    web_search/web_fetch and the answer cites no URL, append the URLs those tools
+    actually returned -- labeled as consulted, since we can't know which were used.
+    """
+    payload = getattr(message, "payload", None)
+    if not isinstance(payload, dict) or not str(payload.get("response") or "").strip():
+        return
+    if _URL.search(payload["response"]):
+        return
+    urls = []
+    for m in messages:
+        content = str((getattr(m, "payload", {}) or {}).get("content", ""))
+        if getattr(m, "type", None) == MessageType.TOOL_RESULT and re.match(r"^\[web_(search|fetch)\(", content):
+            urls.extend(u.rstrip(".,;:") for u in _URL.findall(content))
+    urls = list(dict.fromkeys(urls))[:5]
+    if urls:
+        payload["response"] = payload["response"].rstrip() + "\n\nSources consulted:\n" + "\n".join(f"- {u}" for u in urls)
+        payload["content"] = payload["response"]
 
 
 def _loop(agent, context, execute_action, max_steps, source, is_halted) -> LoopResult:
@@ -255,11 +289,15 @@ def _loop(agent, context, execute_action, max_steps, source, is_halted) -> LoopR
             if is_halted and is_halted():
                 raise InterruptedError("Agent loop execution halted by user interrupt.")
             outcome = execute_action(action)
+            payload = {"content": f"[{describe_action(action)} -> {outcome.status}]\n{outcome.content}"}
+            image = _read_image_path(action, outcome)
+            if image:
+                payload["images"] = [image]  # the agent's next call sees the picture itself
             context.conversation.add(Message(
                 sender="System",
                 receiver=agent.name,
                 type=MessageType.TOOL_RESULT,
-                payload={"content": f"[{describe_action(action)} -> {outcome.status}]\n{outcome.content}"},
+                payload=payload,
             ))
             if outcome.status == "declined":
                 # Like Claude Code: a "no" hands control back to the user.

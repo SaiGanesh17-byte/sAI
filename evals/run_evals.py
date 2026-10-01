@@ -66,6 +66,22 @@ def _fill(value, variables: Dict[str, str]):
     return value
 
 
+def _draw_text_image(path: Path, text: str) -> None:
+    """A screenshot-like PNG showing `text`, for vision cases."""
+    from PIL import Image, ImageDraw, ImageFont
+    img = Image.new("RGB", (720, 160), "white")
+    draw = ImageDraw.Draw(img)
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 30)
+    except OSError:
+        font = ImageFont.load_default()
+    draw.rectangle([8, 8, 712, 152], outline="red", width=4)
+    for i, line in enumerate(text.splitlines()):
+        draw.text((28, 30 + 50 * i), line, fill="black", font=font)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(path)
+
+
 def check(case: dict, data: dict, workspace: Path, before: Dict[str, str]) -> List[str]:
     """Returns failure messages (empty = pass). Pure function of the run's output -- unit tested."""
     expect = case.get("expect") or {}
@@ -104,10 +120,12 @@ def check(case: dict, data: dict, workspace: Path, before: Dict[str, str]) -> Li
     for rel in expect.get("file_missing", []):
         if (workspace / rel).exists():
             failures.append(f"{rel} should not exist")
-    for rel, needle in (expect.get("file_contains") or {}).items():
+    for rel, needles in (expect.get("file_contains") or {}).items():
         path = workspace / rel
-        if not path.exists() or needle not in path.read_text(errors="ignore"):
-            failures.append(f"{rel} doesn't contain {needle!r}")
+        content = path.read_text(errors="ignore") if path.exists() else None
+        for needle in ([needles] if isinstance(needles, str) else needles):
+            if content is None or needle not in content:
+                failures.append(f"{rel} doesn't contain {needle!r}")
     for rel in expect.get("file_unchanged", []):
         path = workspace / rel
         if not path.exists():
@@ -126,6 +144,8 @@ def run_case(case: dict) -> CaseResult:
             (workspace / rel).parent.mkdir(parents=True, exist_ok=True)
             (workspace / rel).write_text(content)
             before[rel] = content
+        for rel, text in (case.get("images") or {}).items():
+            _draw_text_image(workspace / rel, text)
 
         cmd = [str(SAI), "-p", case["prompt"], "--output-format", "json", "--quiet"]
         if case.get("accept_edits"):
@@ -145,6 +165,13 @@ def run_case(case: dict) -> CaseResult:
         elapsed = time.time() - started
 
         failures = check(case, data, workspace, before)
+        # When a file check fails, keep what the file actually ended up as -- the answer
+        # alone can't tell "agent did the wrong thing" from "agent described it wrongly".
+        expect = case.get("expect") or {}
+        checked = set(expect.get("file_contains") or {}) | set(expect.get("file_unchanged") or [])
+        for rel in sorted(checked):
+            if any(f.startswith(rel) for f in failures) and (workspace / rel).is_file():
+                failures.append(f"{rel} now reads: {(workspace / rel).read_text(errors='ignore')[:400]!r}")
         usage = data.get("usage") or {}
         return CaseResult(
             id=case["id"], persona=case.get("persona", ""), passed=not failures, failures=failures,

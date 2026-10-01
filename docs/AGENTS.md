@@ -10,7 +10,7 @@ instructions, model, and -- enforced in code -- which tools they can use.
 | **Architect** | 1 | `openai/gpt-4o-mini` | read/search, web, `write_file`/`edit_file` (design docs) |
 | **Coder** | 2 | `qwen/qwen3-coder-plus` | all (`*`) |
 | **Debugger** | 3 | `qwen/qwen3-coder-plus` | all (`*`) |
-| **Reviewer** | 4 | `openai/gpt-4o-mini` | read-only |
+| **Reviewer** | 4 | `qwen/qwen3-coder-plus` | read-only |
 | **Researcher** | 5 | `openai/gpt-4o-mini` | read/search, `web_search`, `web_fetch`, `math_solve`, `mcp__*` |
 | **DevOps** | 6 | `qwen/qwen3-coder-plus` | all (`*`) |
 | **Writer** | 7 | free | read/search, web, `write_file`/`edit_file`/`patch_file` -- no shell |

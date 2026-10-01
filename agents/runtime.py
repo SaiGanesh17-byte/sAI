@@ -1,4 +1,6 @@
 import fnmatch
+import functools
+import logging
 import json
 import re
 from typing import Dict, Any, List
@@ -35,6 +37,31 @@ def parse_json_response(content: str, agent_name: str) -> dict:
         "finished": False,
         "actions": []
     }
+
+@functools.lru_cache(maxsize=1)
+def environment_note() -> str:
+    """Facts about the machine the agent's commands run on, detected once. Agents otherwise
+    assume a generic Linux box: `python -m pytest` on a Mac that only has python3, then
+    burn steps working around it."""
+    import platform
+    import shutil
+    import subprocess
+
+    system = {"Darwin": "macOS", "Windows": "Windows"}.get(platform.system(), platform.system())
+    python = "python3" if shutil.which("python3") else ("python" if shutil.which("python") else None)
+    facts = [f"OS: {system}", "shell: /bin/sh"]
+    if python:
+        facts.append(f"Python: use `{python}`" + ("" if shutil.which("python") else " (there is no `python` command)"))
+        try:
+            has_pytest = subprocess.run([python, "-c", "import pytest"], capture_output=True, timeout=10).returncode == 0
+        except Exception:
+            has_pytest = False
+        facts.append(f"pytest: {'installed' if has_pytest else f'NOT installed for {python} -- verify with a {python} -c "..." one-liner instead'}")
+    for tool in ("node", "npm", "git", "docker", "java", "mvn"):
+        if shutil.which(tool):
+            facts.append(f"{tool}: available")
+    return "ENVIRONMENT: " + "; ".join(facts) + "."
+
 
 def current_date_note() -> str:
     """Models assume it's still the year their training data ends -- e.g. searching
@@ -112,6 +139,23 @@ AVAILABLE AGENTS YOU CAN HAND OFF TO (set "next_agent" to one of these EXACT nam
 AVAILABLE TOOLS:
 {tools_instruction}
 
+{environment_note()}
+
+DOING THE WORK:
+- If the user asks you to fix, change, add, write or create something, DO it with your tools
+  (edit_file / write_file), then verify it. Showing the code in your answer without applying it
+  is not doing the task -- unless the user said not to edit.
+- Change only what the request needs. If you notice other problems, mention them in your answer
+  instead of fixing them unasked.
+- Files change between turns (you, other agents and the user edit them). Before describing,
+  quoting or editing a file in this workspace, read its CURRENT content in this turn -- never rely
+  on how it looked earlier in the conversation.
+- If the user already gave you what you need (a pasted error, stack trace, log or code snippet),
+  answer from it. Don't stall asking for source files that aren't in the workspace; say what to
+  check in them instead.
+- In "response", only state results you have seen in tool output this turn (e.g. don't say tests
+  pass unless you ran them and saw them pass).
+
 THE USER'S EXPLICIT INSTRUCTIONS OVERRIDE YOUR ROLE. If the user said not to change anything
 ("don't edit", "just tell me", "only plan", "read-only"), do NOT call write_file, edit_file,
 patch_file, or commands that modify files -- investigate and report instead, even if your
@@ -165,9 +209,17 @@ Respond ONLY with the JSON block. Do not include markdown wraps or conversationa
             query_kwargs["response_format"] = {"type": "json_object"}
 
         llm_runtime = kernel.get_service("llm_runtime")
-        # Images attached to the request this agent is working on (latest user message).
-        images = next((list(m.payload.get("images") or []) for m in reversed(conversation.all())
-                       if getattr(m, "sender", "") == "User" and isinstance(getattr(m, "payload", None), dict)), [])
+        # Images for this request: attached to the latest user message, or read with
+        # read_file since then.
+        images: List[str] = []
+        for m in reversed(conversation.all()):
+            payload = getattr(m, "payload", None)
+            if not isinstance(payload, dict):
+                continue
+            images = list(payload.get("images") or []) + images
+            if getattr(m, "sender", "") == "User":
+                break
+        images = list(dict.fromkeys(images))[-4:]
         if images:
             query_kwargs["images"] = images
 
@@ -255,7 +307,13 @@ Respond ONLY with the JSON block. Do not include markdown wraps or conversationa
                     error_msg = f"Exception during retry query: {e}"
                     
             if not is_valid:
-                raise ValueError(f"Reviewer output failed schema validation check after retry. Error: {error_msg}. Raw Response: {raw_response[:300]}")
+                # The structured findings are a bonus for the web UI's patch panel; a
+                # review that only came back as prose is still a review. Crashing the
+                # turn here threw away a perfectly good answer.
+                logging.getLogger("sai.agents").warning(f"Reviewer findings unusable ({error_msg}); keeping the prose review.")
+                if "Failed to parse structured JSON" in "".join(parsed.get("reasoning", [])):
+                    parsed["response"] = parsed.get("response") or raw_response
+                parsed["findings"] = parsed.get("findings") if isinstance(parsed.get("findings"), list) else []
         
         memory_update = parsed.get("memory_update", "")
         summary = parsed.get("summary", "Processed.")

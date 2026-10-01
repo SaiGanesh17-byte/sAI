@@ -47,23 +47,60 @@ class SearchTool(BaseTool):
 
         try:
             results = self._search(query, max_results=6)
-            if not results:
-                return (
-                    f"No search results found for query: '{query}'. "
-                    "Try a more specific or differently-phrased query before giving up on this topic."
-                )
+        except Exception as e:
+            results, ddg_error = [], str(e)
+        else:
+            ddg_error = "" if results else "no results"
 
+        if results:
             output = []
             for r in results:
                 output.append(f"Title: {r.get('title')}\nURL: {r.get('href')}\nBody: {r.get('body')}\n---")
             return "\n".join(output)
-        except RatelimitException:
-            return "Error performing web search: rate-limited by the search provider after retries. Wait a moment before searching again."
-        except Exception as e:
-            return f"Error performing web search: {e}"
+
+        # DuckDuckGo scraping gets blocked or rate-limited (every backend returned
+        # "No results found" after a busy day); fall back to OpenRouter's web search.
+        fallback = openrouter_web_search(query)
+        if fallback:
+            return fallback
+        return (f"Error performing web search: {ddg_error or 'no results'}. Try a differently-phrased query, or "
+                f"web_fetch an official source directly (project website, docs, GitHub releases page).")
 
 import ast
 from pathlib import Path
+
+
+def openrouter_web_search(query: str, max_results: int = 5) -> str:
+    """
+    Search via OpenRouter's web plugin (billed to the OpenRouter key, ~$0.007 per
+    search). Used only when DuckDuckGo fails. Returns "" if unavailable.
+    """
+    import os
+    from core.settings import load_settings
+    settings = load_settings()
+    if settings.get("provider") != "openrouter" or not settings.get("web_search_fallback", True):
+        return ""
+    if not os.getenv("OPENROUTER_API_KEY"):
+        return ""
+    try:
+        from openai import OpenAI
+        from llm.tracker import token_tracker
+        client = OpenAI(api_key=os.environ["OPENROUTER_API_KEY"], base_url="https://openrouter.ai/api/v1")
+        resp = client.chat.completions.create(
+            model=f"{settings.get('free_fallback_model') or 'openai/gpt-4o-mini'}:online",
+            messages=[{"role": "user", "content":
+                       f"Search the web for: {query}\nList each result as:\nTitle: ...\nURL: ...\nBody: what the "
+                       "page says that is relevant (facts, versions, dates), quoted closely.\n---\n"
+                       "Report only what the results say."}],
+            temperature=0, timeout=45,
+            extra_body={"plugins": [{"id": "web", "max_results": max_results}]},
+        )
+        if getattr(resp, "usage", None):
+            token_tracker.add_usage(resp.usage)
+        text = (resp.choices[0].message.content or "").strip()
+        return f"[web search via OpenRouter -- DuckDuckGo was unavailable]\n{text}" if text else ""
+    except Exception:
+        return ""
 
 from core.security import get_current_workspace
 

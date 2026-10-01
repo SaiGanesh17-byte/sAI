@@ -185,7 +185,12 @@ class SaiRepl:
         summary = ""
         if msg is not None:
             payload = getattr(msg, "payload", {}) or {}
-            summary = payload.get("response") or payload.get("summary") or payload.get("content") or ""
+            if payload.get("actions"):
+                # Its actions haven't run yet: show what it's doing, not a "response"
+                # that may already claim results ("all tests pass") it hasn't seen.
+                summary = payload.get("summary") or ""
+            else:
+                summary = payload.get("response") or payload.get("summary") or payload.get("content") or ""
         if summary:
             self.printer.agent_message(agent, summary)
 
@@ -721,12 +726,16 @@ class SaiRepl:
     INIT_PROMPT = (
         "Create (or improve, if it exists) the file SAI.md at the root of this workspace. Every sAI agent "
         "reads it before working on this project, so it should hold what a new engineer needs on day one:\n"
-        "1. One or two lines on what the project is.\n"
-        "2. Exact commands to install, build, run, lint and test (only ones you can confirm from the files).\n"
-        "3. A short map of the important directories and entry points.\n"
-        "4. Conventions worth following (style, patterns, things to avoid).\n"
-        "Start with list_directory and read the README and package/build manifests before writing. "
-        "Keep it under 80 lines and don't invent commands you can't find evidence for."
+        "1. One or two lines on what the project is -- from what the code actually does.\n"
+        "2. Commands to install, build, run, lint and test -- ONLY commands backed by a file you found "
+        "(requirements.txt, pyproject.toml, package.json, Makefile, pom.xml, ...) or that clearly work on "
+        "the files present (e.g. python3 -m pytest when there are test_*.py files). No placeholders like "
+        "<repository-url>, no tools the project doesn't use. If there's no dependency file, say so.\n"
+        "3. A short map of the important files/directories and entry points.\n"
+        "4. Conventions you can actually see in the code.\n"
+        "Start with list_directory/glob and read the README, manifests and main source files. Write the file "
+        "with write_file; in \"response\" just say what you wrote (don't repeat the whole file). Keep it under "
+        "60 lines."
     )
 
     def _run_init(self):
