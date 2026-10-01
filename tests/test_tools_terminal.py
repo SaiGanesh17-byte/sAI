@@ -47,3 +47,45 @@ def test_urls_are_not_mistaken_for_paths(tmp_workspace, monkeypatch):
     monkeypatch.setattr(terminal.async_process_manager, "is_running", False)
     TerminalTool().execute({"command": "curl -s https://example.com/some/page"})
     assert started == ["curl -s https://example.com/some/page"]
+
+
+def test_running_a_destructive_script_needs_approval_for_its_content(tmp_workspace, monkeypatch):
+    # Regression: with `rm` gated, an agent wrote delete_files.py and ran `python3 delete_files.py`.
+    from tools import terminal
+    started = []
+    monkeypatch.setattr(terminal.async_process_manager, "start_process", lambda cmd, cwd: started.append(cmd))
+    monkeypatch.setattr(terminal.async_process_manager, "is_running", False)
+    script = tmp_workspace / "delete_files.py"
+    script.write_text("import os\nfor f in os.listdir('.'):\n    os.remove(f)\n")
+
+    for command in ("python3 delete_files.py", "cd . && python3 -u delete_files.py", "bash -c 'true'; python delete_files.py"):
+        with pytest.raises(PermissionRequestRequired) as exc:
+            TerminalTool().execute({"command": command})
+        assert exc.value.kind == "script" and exc.value.path == str(script.resolve())
+    assert started == []
+
+    security.approve_request(str(script.resolve()), "script")
+    TerminalTool().execute({"command": "python3 delete_files.py"})
+    assert started == ["python3 delete_files.py"]
+
+    script.write_text(script.read_text() + "# edited after approval\n")  # approval is for that exact content
+    with pytest.raises(PermissionRequestRequired):
+        TerminalTool().execute({"command": "python3 delete_files.py"})
+
+
+def test_harmless_scripts_and_executables_still_run(tmp_workspace, monkeypatch):
+    from tools import terminal
+    started = []
+    monkeypatch.setattr(terminal.async_process_manager, "start_process", lambda cmd, cwd: started.append(cmd))
+    monkeypatch.setattr(terminal.async_process_manager, "is_running", False)
+    (tmp_workspace / "hello.py").write_text("print('hi')\n")
+    (tmp_workspace / "wipe.sh").write_text("rm -rf ./build\n")
+    TerminalTool().execute({"command": "python3 hello.py"})
+    with pytest.raises(PermissionRequestRequired):
+        TerminalTool().execute({"command": "./wipe.sh"})
+    assert started == ["python3 hello.py"]
+
+
+@pytest.mark.parametrize("script", ["fs.unlinkSync('a')", "require('rimraf')", "FileUtils.rm_rf('x')", "Path('a').unlink()"])
+def test_js_ruby_pathlib_deletes_are_risky(script):
+    assert security.find_risky_pattern(script) is not None

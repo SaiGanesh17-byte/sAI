@@ -229,6 +229,11 @@ RISKY_PATTERNS = [
     ("__import__", r"\b__import__\b"),
     ("shutil.rmtree", r"\bshutil\.rmtree\b"),
     ("os.remove", r"\bos\.(remove|unlink|rmdir|removedirs)\b"),
+    ("pathlib unlink", r"\.(unlink|rmdir)\(\s*(missing_ok\s*=\s*\w+)?\s*\)"),
+    # node / ruby script content
+    ("fs.unlink", r"\bfs\.(unlink|unlinksync|rm|rmsync|rmdir|rmdirsync)\b|\brimraf\b"),
+    ("child_process", r"\bchild_process\b|\bexecsync\b"),
+    ("FileUtils.rm", r"\bfileutils\.(rm|rm_r|rm_rf|remove)\b|\bfile\.delete\b"),
 ]
 _RISKY_REGEXES = [(label, re.compile(rx)) for label, rx in RISKY_PATTERNS]
 

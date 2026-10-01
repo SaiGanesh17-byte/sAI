@@ -29,6 +29,67 @@ def wrap_for_sandbox(command: str, cwd: str, settings: dict) -> str:
     return command
 
 
+_INTERPRETERS = {"python", "python3", "bash", "sh", "zsh", "node", "ruby", "perl", "php", "deno", "bun", "tsx", "ts-node"}
+
+
+def _scripts_in(command: str) -> List[Path]:
+    """Workspace files a command would execute: `python3 x.py`, `bash -e x.sh`, `./x`."""
+    import shlex
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        tokens = command.split()
+    found = []
+    expect_script = False
+    for tok in tokens:
+        if tok in ("&&", "||", ";", "|"):
+            expect_script = False
+            continue
+        if expect_script:
+            if tok.startswith("-"):
+                if tok in ("-c", "-e", "-m"):
+                    expect_script = False  # inline code/module: the command text itself is scanned
+                continue
+            found.append(tok)
+            expect_script = False
+            continue
+        if Path(tok).name in _INTERPRETERS:
+            expect_script = True
+        elif tok.startswith("./"):
+            found.append(tok)
+    paths = []
+    for raw in found:
+        p = Path(raw).expanduser()
+        p = p if p.is_absolute() else get_current_workspace() / p
+        if p.is_file():
+            paths.append(p.resolve())
+    return paths
+
+
+def _check_scripts_run_by(command: str) -> None:
+    """
+    The command text can be harmless while the script it runs is not: with `rm`
+    gated, an agent wrote delete_files.py and ran `python3 delete_files.py`,
+    wiping the workspace without a single prompt. Scripts are scanned like
+    run_python_script's, and approval is tied to their exact content.
+    """
+    from core.security import find_risky_pattern, is_script_approved
+    from execution.permissions import PermissionRequestRequired
+
+    for script in _scripts_in(command):
+        try:
+            content = script.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        pattern = find_risky_pattern(content)
+        if pattern and not is_script_approved(script):
+            raise PermissionRequestRequired(
+                path=str(script),
+                reason=f"`{command[:80]}` runs {script.name}, which contains '{pattern}'.",
+                kind="script",
+            )
+
+
 def check_command(command: str) -> Optional[str]:
     """
     Shared safety gate for foreground and background commands. Raises
@@ -37,6 +98,8 @@ def check_command(command: str) -> Optional[str]:
     """
     from core.security import consume_approved_command, find_risky_pattern, is_command_allowed_by_rule
     from execution.permissions import PermissionRequestRequired
+
+    _check_scripts_run_by(command)
 
     matched_pattern = find_risky_pattern(command)
     if matched_pattern and not is_command_allowed_by_rule(command):
