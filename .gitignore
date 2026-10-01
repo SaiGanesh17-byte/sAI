@@ -21,3 +21,5 @@ init
 # OS metadata
 .DS_Store
 Thumbs.db
+# real-model eval outputs (evals/run_evals.py)
+evals/results/
