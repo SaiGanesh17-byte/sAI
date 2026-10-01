@@ -165,6 +165,11 @@ Respond ONLY with the JSON block. Do not include markdown wraps or conversationa
             query_kwargs["response_format"] = {"type": "json_object"}
 
         llm_runtime = kernel.get_service("llm_runtime")
+        # Images attached to the request this agent is working on (latest user message).
+        images = next((list(m.payload.get("images") or []) for m in reversed(conversation.all())
+                       if getattr(m, "sender", "") == "User" and isinstance(getattr(m, "payload", None), dict)), [])
+        if images:
+            query_kwargs["images"] = images
 
         # Optional real function-calling path (off by default -- see docs/MODELS.md).
         # Additive: when tool_calls come back, they're merged into the same

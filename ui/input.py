@@ -20,6 +20,13 @@ IGNORED_DIRS = {".git", "venv", ".venv", "node_modules", "__pycache__", ".sai", 
 MAX_INDEXED_FILES = 5000
 MAX_ATTACH_CHARS = 20000
 MENTION = re.compile(r"(?<!\S)@([^\s]+)")
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+MAX_IMAGES = 4
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+def is_image(path: Path) -> bool:
+    return Path(path).suffix.lower() in IMAGE_SUFFIXES
 
 
 def list_workspace_files(workspace: Path, limit: int = MAX_INDEXED_FILES) -> List[str]:
@@ -70,7 +77,12 @@ def expand_file_mentions(text: str, workspace: Path) -> Tuple[str, List[Path]]:
         target = (workspace / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
         if target in attached or not target.exists() or not validate_path(target):
             continue
-        if target.is_dir():
+        if is_image(target):
+            if sum(is_image(p) for p in attached) >= MAX_IMAGES or target.stat().st_size > MAX_IMAGE_BYTES:
+                blocks.append(f"[Image {raw} not attached: max {MAX_IMAGES} images of up to 5 MB each]")
+                continue
+            blocks.append(f"[Attached image: {raw} -- you can see it]")
+        elif target.is_dir():
             entries = sorted(p.name + ("/" if p.is_dir() else "") for p in target.iterdir() if p.name not in IGNORED_DIRS)
             blocks.append(f"[Attached directory listing: {raw}]\n" + "\n".join(entries[:200]))
         else:

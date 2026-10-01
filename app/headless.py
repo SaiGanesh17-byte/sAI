@@ -27,7 +27,7 @@ from execution.permissions import PermissionRequestRequired
 from jev.decision import JevRouter
 from llm.tracker import token_tracker
 from ui.activity import tool_call_label
-from ui.input import expand_file_mentions
+from ui.input import expand_file_mentions, is_image
 
 MAX_STDIN_CHARS = 100_000
 
@@ -73,6 +73,8 @@ def run_headless(prompt: str, accept_edits: bool = False, output_format: str = "
     orchestrator = Orchestrator()
     task = Task(goal="")
     goal, attached = expand_file_mentions(prompt, workspace)
+    images = [str(p) for p in attached if is_image(p)]
+    task.images = images
     if submit.context:
         goal += f"\n\n[Context added by a UserPromptSubmit hook]\n{submit.context}"
     for path in attached:
@@ -111,7 +113,7 @@ def run_headless(prompt: str, accept_edits: bool = False, output_format: str = "
                 agent_name = agent.name
                 progress(f"sAI → {agent.name}")
                 task.context.conversation.add(Message(sender="User", receiver=agent.name, type=MessageType.TASK,
-                                                      payload={"content": goal}))
+                                                      payload={"content": goal, "images": images}))
                 loop = run_agent_loop(
                     agent, task.context,
                     lambda action: orchestrator.execute_action(task, agent, action, approve),

@@ -41,7 +41,7 @@ from llm.runtime import BudgetExceeded
 from ui.banner import render_banner, TEAL, VIOLET, DIM
 from agents.loop import LoopResult, run_agent_loop
 from ui.esc_watcher import EscWatcher
-from ui.input import InputReader, expand_file_mentions
+from ui.input import InputReader, expand_file_mentions, is_image
 from ui.activity import (
     ActivityIndicator, ActivityPrinter, TOOL_LABELS, format_tokens, partial_json_string, tool_call_label, tool_result_summary,
 )
@@ -503,6 +503,7 @@ class SaiRepl:
             self.task.context.conversation.add(msg)
         else:
             self.task.goal = goal
+            self.task.images = [str(p) for p in attached if is_image(p)]
 
             if decision.route == "single_agent" and decision.agent:
                 self._run_single_agent(decision.agent)
@@ -804,7 +805,8 @@ class SaiRepl:
             return
 
         self.task.context.conversation.add(Message(
-            sender="User", receiver=agent.name, type=MessageType.TASK, payload={"content": self.task.goal}
+            sender="User", receiver=agent.name, type=MessageType.TASK,
+            payload={"content": self.task.goal, "images": list(getattr(self.task, "images", []) or [])}
         ))
 
         # Tool-use loop: the agent sees each result before it responds again,

@@ -9,6 +9,22 @@ from llm.router import ModelRouter
 
 logger = logging.getLogger("sai.llm.runtime")
 
+def image_content(text: str, image_paths: List[str]) -> List[Dict[str, Any]]:
+    """OpenAI-style multimodal content: the prompt text plus each image as a data URL."""
+    import base64
+    import mimetypes
+    parts: List[Dict[str, Any]] = [{"type": "text", "text": text}]
+    for path in image_paths:
+        try:
+            data = Path(path).read_bytes()
+        except OSError:
+            continue
+        mime = mimetypes.guess_type(str(path))[0] or "image/png"
+        parts.append({"type": "image_url",
+                      "image_url": {"url": f"data:{mime};base64,{base64.b64encode(data).decode()}"}})
+    return parts
+
+
 class BudgetExceeded(RuntimeError):
     pass
 
@@ -190,6 +206,11 @@ class LLMRuntime:
         # An explicit model (e.g. an agent's own configured model) overrides the
         # task_kind-based guess; task_kind is still used to pick the provider.
         model_name = model or routed_model
+        images = kwargs.pop("images", None) or []
+        if images:
+            # Code models (qwen3-coder) can't see images; a request carrying one
+            # goes to the configured vision model instead.
+            model_name = settings.get("vision_model") or "openai/gpt-4o-mini"
         
         event_bus.publish(
             EventType.LLM_REQUEST, 
@@ -198,7 +219,7 @@ class LLMRuntime:
         )
 
         messages = [
-            {"role": "user", "content": compressed_prompt}
+            {"role": "user", "content": image_content(compressed_prompt, images) if images else compressed_prompt}
         ]
 
         provider = kernel.get_provider(provider_name)

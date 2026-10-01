@@ -50,6 +50,7 @@ files and run commands. That folder is the workspace; agents can't reach outside
 |---|---|
 | plain text | a request -- Jev routes it (direct answer, one agent, or the full team) |
 | `@path/to/file` | attaches that file (or a directory listing) to the request |
+| `@screenshot.png` | attaches an image (png/jpg/gif/webp, up to 4) -- sent to `vision_model` |
 | `!command` | runs a shell command yourself |
 | `\` at line end, or Option+Enter | new line |
 | ↑ / ↓, Tab | history; completion for `/commands` and `@files` |
@@ -122,6 +123,7 @@ Settings live in `.sai/settings.json` (created on first run). The useful ones:
 | `allow_commands` | `[]` | command prefixes that never ask, e.g. `["pytest", "npm test"]` |
 | `mcp_servers` | `{}` | MCP servers to start -- see `core/mcp.py` |
 | `hooks` | -- | shell commands on PreToolUse / PostToolUse / UserPromptSubmit / Stop -- see `core/hooks.py` |
+| `vision_model` | `openai/gpt-4o-mini` | used for any request with an attached image |
 | `daily_budget_usd` | `0` (off) | daily spending cap for paid models |
 | `agent_max_steps` | `12` | tool-use steps per agent turn |
 | `docker_sandbox` | `false` | run shell commands inside Docker |

@@ -222,7 +222,7 @@ class Orchestrator:
                 sender="User",
                 receiver="Planner",
                 type=MessageType.TASK,
-                payload={"content": task.goal}
+                payload={"content": task.goal, "images": list(getattr(task, "images", []) or [])}
             )
             task.context.conversation.add(first)
 

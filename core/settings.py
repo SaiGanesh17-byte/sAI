@@ -21,7 +21,8 @@ DEFAULT_SETTINGS = {
     "free_model_chain": ["inclusionai/ling-3.0-flash-sante:free", "nvidia/nemotron-3-super-120b-a12b:free", "cohere/north-mini-code:free"],
     "free_model_retries": 1,  # how many other free models to try before the paid fallback
     "free_model_timeout": 30,  # seconds of silence before giving up on a free model
-    "free_fallback_model": "openai/gpt-4o-mini",  # paid model used when free ones are rate-limited or fail
+    "free_fallback_model": "openai/gpt-4o-mini",
+    "vision_model": "openai/gpt-4o-mini",  # used for any call that carries @image attachments  # paid model used when free ones are rate-limited or fail
     "jev_json_mode": True,
     "agents_json_mode": True,
     "context_token_budget": 32000,
