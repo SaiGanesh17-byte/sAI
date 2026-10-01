@@ -97,6 +97,13 @@ class Orchestrator:
         from core.security import update_current_activity
         tool_name = action.get("tool", "")
         tool_args = action.get("args", {}) or {}
+        if hasattr(agent, "allows_tool") and not agent.allows_tool(tool_name):
+            # Each agent's tool list is enforced here, not just described in its prompt.
+            return ActionOutcome(
+                "failed",
+                f"Error: the {agent.name} agent can't use '{tool_name}'. Use one of your listed tools, "
+                f"or hand off (next_agent) to an agent that has it.",
+            )
         target_path = tool_args.get("path", tool_args.get("target_file", tool_args.get("TargetFile", "")))
         target_cmd = tool_args.get("command", tool_args.get("CommandLine", ""))
         update_current_activity({"status": "executing", "tool": tool_name, "path": str(target_path), "command": str(target_cmd)})

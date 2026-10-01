@@ -8,7 +8,7 @@ def test_system_prompt_forbids_direct_answer_for_time_sensitive_questions():
     normalized = " ".join(SYSTEM_PROMPT.lower().split())
     assert "never use this route" in normalized
     assert "latest" in normalized
-    assert "websearch" in normalized
+    assert "researcher" in normalized  # the live-web research agent
 
 
 def test_parse_clean_json():

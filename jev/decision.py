@@ -39,13 +39,13 @@ Routing rules:
   versions of external software/models/products, current prices, current events, or any
   other fact you are not certain is still true today. Answering those from memory risks
   confidently stating stale information as if it were current -- that failure mode is
-  worse than a slower answer. Route those to "single_agent" with the WebSearch agent
+  worse than a slower answer. Route those to "single_agent" with the Researcher agent
   instead, if one is available in the list below.
 - "single_agent": a narrow request that clearly maps to exactly ONE agent's stated role
   in the available agents list below -- match on what each agent's role description
   actually says, not on generic assumptions. This includes every time-sensitive factual
   question described above -- route it to whichever agent's role covers live/external
-  research (e.g. WebSearch), not to "direct_answer" from memory. If a request touches
+  research (e.g. Researcher), not to "direct_answer" from memory. If a request touches
   more than one agent's distinct area of responsibility (e.g. both security AND
   licensing), that is NOT a single-agent fit.
 - "full_orchestrator": anything spanning multiple concerns, multi-step work, or anything

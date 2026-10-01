@@ -28,7 +28,8 @@ class AgentRegistry:
                         role=data["role"],
                         system_prompt=data["system_prompt"],
                         model=data["model"],
-                        temperature=data.get("temperature", 0.2)
+                        temperature=data.get("temperature", 0.2),
+                        tools=data.get("tools") or ["*"],
                     )
                     kernel.register_agent(name, agent)
                 

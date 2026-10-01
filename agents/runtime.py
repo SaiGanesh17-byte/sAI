@@ -1,3 +1,4 @@
+import fnmatch
 import json
 import re
 from typing import Dict, Any, List
@@ -50,12 +51,22 @@ class AgentRuntime:
     Generic Agent Runtime. Executes reasoning loops by compiling context 
     prompts and dispatching requests to the LLM Runtime.
     """
-    def __init__(self, name: str, role: str, system_prompt: str, model: str, temperature: float = 0.2):
+    def __init__(self, name: str, role: str, system_prompt: str, model: str, temperature: float = 0.2,
+                 tools: List[str] = None):
         self.name = name
         self.role = role
         self.system_prompt = system_prompt
         self.model = model
         self.temperature = temperature
+        # fnmatch patterns ("*", "mcp__*", "read_file"). Enforced in
+        # Orchestrator.execute_action, not just requested in the prompt.
+        self.tools = list(tools or ["*"])
+
+    def allows_tool(self, tool_name: str) -> bool:
+        return any(fnmatch.fnmatch(tool_name or "", pattern) for pattern in self.tools)
+
+    def _available_tools(self, tool_reg) -> Dict[str, Any]:
+        return {n: d for n, d in tool_reg.list_tools().items() if self.allows_tool(n)} if tool_reg else {}
 
     def execute_turn(self, context: TaskContext) -> Message:
         repository = kernel.get_service("repository")
@@ -67,7 +78,7 @@ class AgentRuntime:
         tool_reg = kernel.get_service("tool_registry")
         tool_desc = []
         if tool_reg:
-            for idx, (name, details) in enumerate(tool_reg.list_tools().items(), 1):
+            for idx, (name, details) in enumerate(self._available_tools(tool_reg).items(), 1):
                 desc = details.get("description", "")
                 schema = details.get("schema", {})
                 tool_desc.append(f"{idx}. {name}: {desc}\n   Usage schema: {json.dumps(schema)}")
@@ -159,7 +170,7 @@ Respond ONLY with the JSON block. Do not include markdown wraps or conversationa
                         "parameters": details.get("schema") or {"type": "object", "properties": {}},
                     },
                 }
-                for t_name, details in tool_reg.list_tools().items()
+                for t_name, details in self._available_tools(tool_reg).items()
             ]
             result = llm_runtime.query_with_tools(
                 full_prompt, task_kind=self.name, tools=tools_schema, temperature=self.temperature, model=self.model
