@@ -36,7 +36,8 @@ from core.kernel import kernel
 from execution.permissions import PermissionRequestRequired
 from tools.terminal import TerminalTool
 from jev.decision import JevRouter
-from llm.tracker import token_tracker
+from llm.tracker import format_usd, spent_today, token_tracker
+from llm.runtime import BudgetExceeded
 from ui.banner import render_banner, TEAL, VIOLET, DIM
 from agents.loop import LoopResult, run_agent_loop
 from ui.esc_watcher import EscWatcher
@@ -69,8 +70,9 @@ SLASH_COMMANDS = {
     "/clear": "start a fresh session",
     "/permissions": "view or change approval rules",
     "/mcp": "connected MCP servers and tools",
+    "/cost": "session cost and token usage",
+    "/budget": "set a daily spending cap",
     "/tokens": "session token usage",
-    "/cost": "session token usage",
 }
 
 
@@ -309,6 +311,9 @@ class SaiRepl:
                 self.activity.hide()
                 self._open_tool = None
                 self.printer.note(f"[red]Interrupted[/red] [{DIM}]· tell sAI what to do instead[/{DIM}]")
+            except BudgetExceeded as e:
+                self.activity.hide()
+                self.printer.note(f"[yellow]{escape(str(e))}[/yellow]")
             except Exception as e:
                 self.activity.hide()
                 self.printer.note(f"[bold red]Unexpected error:[/bold red] {escape(str(e))}")
@@ -504,17 +509,19 @@ class SaiRepl:
     # instead of only in a hidden global counter.
     # ------------------------------------------------------------------
     def _token_snapshot(self):
-        return (token_tracker.input_tokens, token_tracker.output_tokens, token_tracker.calls_count)
+        return (token_tracker.input_tokens, token_tracker.output_tokens, token_tracker.calls_count,
+                token_tracker.cost_usd)
 
     def _print_token_footer(self, before, route: str):
         din = token_tracker.input_tokens - before[0]
         dout = token_tracker.output_tokens - before[1]
         dcalls = token_tracker.calls_count - before[2]
+        dcost = token_tracker.cost_usd - (before[3] if len(before) > 3 else 0.0)
         route_label = ROUTE_LABELS.get(route, route)
         self.console.print(
             f"\n[{DIM}]  jev:{route_label} · ↑ {format_tokens(din)} in · ↓ {format_tokens(dout)} out · "
-            f"{dcalls} call{'s' if dcalls != 1 else ''} · "
-            f"session {format_tokens(token_tracker.input_tokens + token_tracker.output_tokens)} tokens[/{DIM}]"
+            f"{dcalls} call{'s' if dcalls != 1 else ''} · {format_usd(dcost)} · "
+            f"session {format_usd(token_tracker.cost_usd)}[/{DIM}]"
         )
 
     def _recent_turn_summaries(self):
@@ -538,7 +545,8 @@ class SaiRepl:
             self.console.print(f"""
 [bold {VIOLET}]Commands[/bold {VIOLET}]
   [{TEAL}]/agents[/{TEAL}]   list all specialist agents and their roles
-  [{TEAL}]/tokens[/{TEAL}]   show cumulative session token usage (alias: /cost)
+  [{TEAL}]/cost[/{TEAL}]     session cost in $, today's spend, tokens (alias: /tokens)
+  [{TEAL}]/budget[/{TEAL}]   daily spending cap: /budget 2.50 · /budget off
   [{TEAL}]/clear[/{TEAL}]    start a fresh session (the old one stays saved)
   [{TEAL}]/undo[/{TEAL}]     roll back the file edits from the last turn (repeat to go further back)
   [{TEAL}]/compact[/{TEAL}]  summarize the conversation so far to free up context · /compact <what to focus on>
@@ -565,17 +573,26 @@ class SaiRepl:
             self.console.print("\n".join(lines))
             return
 
+        if cmd == "/budget":
+            self._set_budget(parts[1] if len(parts) > 1 else "")
+            return
+
         if cmd in ("/tokens", "/cost"):
             total = token_tracker.input_tokens + token_tracker.output_tokens
+            budget = float(load_settings().get("daily_budget_usd") or 0)
+            budget_line = f"{format_usd(spent_today())} of {format_usd(budget)} daily budget" if budget else f"{format_usd(spent_today())} (no daily budget -- /budget <usd> to set one)"
+            unpriced = f"  [{DIM}]{token_tracker.unpriced_calls} call(s) had no price reported (estimates or non-OpenRouter)[/{DIM}]\n" if token_tracker.unpriced_calls else ""
             self.console.print(f"""
-[bold {VIOLET}]Session token usage[/bold {VIOLET}]
+[bold {VIOLET}]Session usage[/bold {VIOLET}]
+  cost            {format_usd(token_tracker.cost_usd)}
+  today           {budget_line}
   input tokens    {token_tracker.input_tokens:,}
   output tokens   {token_tracker.output_tokens:,}
   total tokens    {total:,}
   LLM calls       {token_tracker.calls_count}
   elapsed         {token_tracker.elapsed_time:.0f}s
   throughput      {token_tracker.speed:.1f} tok/s (output)
-
+{unpriced}
   [{DIM}]Every "jev:direct" / "jev:1 agent" turn below is Jev keeping this off
   the full multi-agent loop -- compare its token delta to a "jev:full team" turn.[/{DIM}]
 """)
@@ -656,6 +673,25 @@ class SaiRepl:
                                 + ", ".join(rel(p) for p in restored)},
         ))
         self.printer.note(f"Restored {len(restored)} file{'s' if len(restored) != 1 else ''}.")
+
+    def _set_budget(self, arg: str):
+        settings = load_settings()
+        if not arg.strip():
+            budget = float(settings.get("daily_budget_usd") or 0)
+            self.printer.note(f"Daily budget: {format_usd(budget) if budget else 'none'} · spent today {format_usd(spent_today())} "
+                              f"[{DIM}]· /budget <usd> to set, /budget off to remove[/{DIM}]")
+            return
+        value = 0.0 if arg.strip().lower() in ("off", "0", "none") else None
+        if value is None:
+            try:
+                value = float(arg.strip().lstrip("$"))
+            except ValueError:
+                self.printer.note(f"[{DIM}]Usage: /budget 2.50  ·  /budget off[/{DIM}]")
+                return
+        settings["daily_budget_usd"] = value
+        save_settings(settings)
+        self.printer.note(f"Daily budget {'removed' if not value else 'set to ' + format_usd(value)} "
+                          f"[{DIM}]· free models keep working after the cap[/{DIM}]")
 
     def _show_mcp(self):
         from core.mcp import mcp_manager

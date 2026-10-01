@@ -65,3 +65,10 @@ def _isolate_free_model_pause(tmp_path, monkeypatch):
     import llm.runtime as rt
     monkeypatch.setattr(rt, "FREE_PAUSE_FILE", tmp_path / "free_models_paused_until")
     monkeypatch.setitem(rt._FREE_MODELS_PAUSED_UNTIL, "t", -1.0)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_spend_file(tmp_path, monkeypatch):
+    """Keep tests from writing to the real .sai/spend.json (daily budget tracking)."""
+    import llm.tracker as tracker
+    monkeypatch.setattr(tracker, "SPEND_FILE", tmp_path / "spend.json")

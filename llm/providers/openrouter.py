@@ -35,7 +35,7 @@ class OpenRouterProvider(BaseProvider):
         )
         if hasattr(response, "usage") and response.usage:
             from llm.tracker import token_tracker
-            token_tracker.add(response.usage.prompt_tokens, response.usage.completion_tokens)
+            token_tracker.add_usage(response.usage)
         return response.choices[0].message.content
 
     def stream(self, messages: List[Dict[str, str]], model: str, temperature: float = 0.2, **kwargs) -> Iterator[str]:
@@ -52,7 +52,7 @@ class OpenRouterProvider(BaseProvider):
         )
         if hasattr(response, "usage") and response.usage:
             from llm.tracker import token_tracker
-            token_tracker.add(response.usage.prompt_tokens, response.usage.completion_tokens)
+            token_tracker.add_usage(response.usage)
         message = response.choices[0].message
         tool_calls = []
         if message.tool_calls:

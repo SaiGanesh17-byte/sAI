@@ -49,6 +49,7 @@ class CaseResult:
     agent: Optional[str] = None
     stop_reason: Optional[str] = None
     tokens: int = 0
+    cost_usd: float = 0.0
     seconds: float = 0.0
     answer: str = ""
 
@@ -149,6 +150,7 @@ def run_case(case: dict) -> CaseResult:
             id=case["id"], persona=case.get("persona", ""), passed=not failures, failures=failures,
             route=data.get("route"), agent=data.get("agent"), stop_reason=data.get("stop_reason"),
             tokens=int(usage.get("input_tokens", 0)) + int(usage.get("output_tokens", 0)),
+            cost_usd=float(usage.get("cost_usd") or 0.0),
             seconds=round(elapsed, 1), answer=str(data.get("result") or data.get("error") or "")[:2000],
         )
 
@@ -189,17 +191,18 @@ def main(argv=None) -> int:
         if r.id in previous and previous[r.id] != r.passed:
             change = "  (was " + ("PASS" if previous[r.id] else "FAIL") + ")"
         who = r.agent or r.route or "-"
-        print(f"{mark}  {r.id:<32} {who:<16} {r.tokens:>7,} tok {r.seconds:>6.1f}s{change}")
+        print(f"{mark}  {r.id:<32} {who:<16} {r.tokens:>7,} tok  ${r.cost_usd:.4f} {r.seconds:>6.1f}s{change}")
         for f in r.failures:
             print(f"        - {f}")
 
     passed = sum(r.passed for r in results)
     tokens = sum(r.tokens for r in results)
-    print(f"\n{passed}/{len(results)} passed · {tokens:,} tokens")
+    cost = sum(r.cost_usd for r in results)
+    print(f"\n{passed}/{len(results)} passed · {tokens:,} tokens · ${cost:.3f}")
 
     RESULTS_DIR.mkdir(exist_ok=True)
     out = RESULTS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}.json"
-    out.write_text(json.dumps({"passed": passed, "total": len(results), "tokens": tokens,
+    out.write_text(json.dumps({"passed": passed, "total": len(results), "tokens": tokens, "cost_usd": round(cost, 4),
                                "results": [asdict(r) for r in results]}, indent=2))
     print(f"Saved {out.relative_to(ROOT)}")
     return 0 if passed == len(results) else 1

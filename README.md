@@ -64,9 +64,10 @@ files and run commands. That folder is the workspace; agents can't reach outside
 | `/compact [focus]` | summarize the conversation to free context (also happens automatically) |
 | `/resume` | continue an earlier session in this folder (`sai -c` / `sai -r` at launch) |
 | `/clear` | start a fresh session (the old one stays resumable) |
+| `/cost`, `/budget <usd>` | session cost in dollars and today's spend; set a daily cap (paid models stop, free ones keep working) |
 | `/permissions` | approval rules: `/permissions edits auto\|ask`, `/permissions allow <cmd prefix>` |
 | `/mcp` | connected MCP servers and their tools |
-| `/agents`, `/tokens`, `/help` | roster, token usage, all commands |
+| `/agents`, `/help` | roster, all commands |
 
 Your own commands: put Markdown files in `.sai/commands/` (project) or `~/.sai/commands/`
 (personal). `review.md` becomes `/review`; `$ARGUMENTS` is replaced by what follows it.
@@ -121,7 +122,8 @@ Settings live in `.sai/settings.json` (created on first run). The useful ones:
 | `allow_commands` | `[]` | command prefixes that never ask, e.g. `["pytest", "npm test"]` |
 | `mcp_servers` | `{}` | MCP servers to start -- see `core/mcp.py` |
 | `hooks` | -- | shell commands on PreToolUse / PostToolUse / UserPromptSubmit / Stop -- see `core/hooks.py` |
-| `agent_max_steps` | `8` | tool-use steps per agent turn |
+| `daily_budget_usd` | `0` (off) | daily spending cap for paid models |
+| `agent_max_steps` | `12` | tool-use steps per agent turn |
 | `docker_sandbox` | `false` | run shell commands inside Docker |
 
 Free models are slower, sometimes unavailable, and limited to 50 requests/day on

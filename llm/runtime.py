@@ -2,12 +2,30 @@ import json
 from pathlib import Path
 from typing import List, Dict, Iterator, Any, Optional
 import logging
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_exponential
 from core.kernel import kernel
 from core.events import event_bus, EventType
 from llm.router import ModelRouter
 
 logger = logging.getLogger("sai.llm.runtime")
+
+class BudgetExceeded(RuntimeError):
+    pass
+
+
+def check_budget(settings: dict) -> None:
+    """Refuse paid calls once today's spend reaches daily_budget_usd (0/None = no cap)."""
+    budget = settings.get("daily_budget_usd") or 0
+    if not budget:
+        return
+    from llm.tracker import format_usd, spent_today
+    spent = spent_today()
+    if spent >= float(budget):
+        raise BudgetExceeded(
+            f"Daily budget reached: {format_usd(spent)} spent today of {format_usd(float(budget))} "
+            f"(daily_budget_usd). Raise it with /budget <usd>, or wait until tomorrow."
+        )
+
 
 def is_free_model(model: str) -> bool:
     """OpenRouter's free models: '<id>:free', or the 'openrouter/free' auto-router."""
@@ -153,6 +171,7 @@ class LLMRuntime:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_not_exception_type(BudgetExceeded),  # a budget cap won't lift by retrying
         reraise=True
     )
     def query(self, prompt: str, task_kind: str, temperature: float = 0.2, model: Optional[str] = None, **kwargs) -> str:
@@ -199,6 +218,8 @@ class LLMRuntime:
             for attempt, candidate in enumerate(candidates):
                 if attempt < len(candidates) - 1 and is_free_model(candidate) and free_models_paused():
                     continue  # the daily free cap was hit earlier in this same chain
+                if not is_free_model(candidate):
+                    check_budget(settings)  # free models stay usable after the cap
                 if attempt:
                     # Free models are often rate-limited or briefly unavailable; fall
                     # straight back to the paid model instead of failing the turn.

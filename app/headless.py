@@ -91,7 +91,7 @@ def run_headless(prompt: str, accept_edits: bool = False, output_format: str = "
     event_bus.subscribe(EventType.TOOL_STARTED, lambda e: progress(f"⏺ {tool_call_label(e.data.get('tool', ''), e.data.get('args'))}"))
     event_bus.subscribe(EventType.LLM_FALLBACK, lambda e: progress(f"  (free model busy: {e.data.get('from')} -> {e.data.get('to')})"))
 
-    tokens_before = (token_tracker.input_tokens, token_tracker.output_tokens)
+    tokens_before = (token_tracker.input_tokens, token_tracker.output_tokens, token_tracker.cost_usd)
     agents = orchestrator.agents
     decision = JevRouter().decide(prompt, [a.name for a in agents], [], agent_roles={a.name: a.role for a in agents})
     start_index = len(task.context.conversation.all())
@@ -138,7 +138,8 @@ def run_headless(prompt: str, accept_edits: bool = False, output_format: str = "
     if denied and stop_reason == "done":
         stop_reason = "declined"
     usage = {"input_tokens": token_tracker.input_tokens - tokens_before[0],
-             "output_tokens": token_tracker.output_tokens - tokens_before[1]}
+             "output_tokens": token_tracker.output_tokens - tokens_before[1],
+             "cost_usd": round(token_tracker.cost_usd - tokens_before[2], 6)}
 
     if output_format == "json":
         print(json.dumps({

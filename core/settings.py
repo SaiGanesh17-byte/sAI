@@ -32,6 +32,7 @@ DEFAULT_SETTINGS = {
     "mcp_servers": {},  # name -> {"command", "args", "env", "disabled"}; see core/mcp.py
     "allow_mcp_tools": [],  # MCP tools that run without asking, e.g. ["mcp__github__"] for a whole server
     "web_fetch_allow_private": False,  # let web_fetch reach localhost/LAN addresses (off: blocks SSRF)
+    "daily_budget_usd": 0,  # stop paid model calls once today's spend reaches this (0 = no cap)
     "agent_max_steps": 12,  # tool-use loop: max agent responses per agent turn
     "auto_compact_tokens": 0,  # summarize history past this many tokens (0 = 60% of context_token_budget)
     "repo_map_token_budget": 1500,  # cap on the repo map included in every agent prompt

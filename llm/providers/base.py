@@ -70,7 +70,7 @@ def stream_chat(client, messages, model: str, temperature: float = 0.2, **kwargs
             yield chunk.choices[0].delta.content
 
     if usage:
-        token_tracker.add(usage.prompt_tokens, usage.completion_tokens)
+        token_tracker.add_usage(usage)
     else:
         prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
         token_tracker.add(prompt_chars // 4, len("".join(produced)) // 4)
