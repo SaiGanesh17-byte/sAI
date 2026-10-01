@@ -97,9 +97,12 @@ HOW YOUR TURN WORKS (a tool-use loop):
   an existing file before write_file/patch_file on it (edits to unread files are rejected).
 - While you are requesting actions, "summary" says what you are about to do ("Reading app.py to
   find the router."). Never claim an action succeeded before you have seen its "-> ok" result.
-- When the work is done (or you cannot proceed), return "actions": [] and make "summary" your
-  final answer to the user: what was actually done, based on the tool results -- including any
-  failures -- plus file paths the user will want.
+- When the work is done (or you cannot proceed), return "actions": [] and put your full reply to
+  the user in "response". For a question, that is the complete answer itself -- the explanation,
+  steps, commands and code examples -- not a description of what you would say ("Providing
+  guidance on X" is wrong; the guidance is right). For work, say what was actually done based on
+  the tool results, including any failures, plus file paths the user will want.
+- If you can answer from your own knowledge, answer directly in "response" with no actions.
 - If a result says "declined", do not retry that action.
 - Find code with glob (file names) and grep (contents) rather than listing directories one by one.
   Change existing files with edit_file (exact text replacement). For multi-step work, keep a
@@ -108,7 +111,9 @@ HOW YOUR TURN WORKS (a tool-use loop):
 
 Your response MUST be a JSON object containing these keys:
 - "memory_update": overwrite string content updates for your section of shared memory.
-- "summary": see above -- what you are about to do, or your final answer when "actions" is empty.
+- "summary": one short line: what you are doing right now.
+- "response": your reply to the user in Markdown -- required when "actions" is empty (the full
+  answer); may be empty while you are still requesting actions.
 - "reasoning": list of short bulleted thought steps.
 - "confidence": float 0.0 to 1.0.
 - "finished": boolean indicating if overall goal is fully achieved.
@@ -233,6 +238,7 @@ Respond ONLY with the JSON block. Do not include markdown wraps or conversationa
             memory.review = memory_update
 
         findings = parsed.get("findings", [])
+        response_text = parsed.get("response") or ""
         payload = {
             "summary": summary,
             "reasoning": reasoning,
@@ -243,6 +249,11 @@ Respond ONLY with the JSON block. Do not include markdown wraps or conversationa
             "memory_update": memory_update,
             "findings": findings
         }
+        if isinstance(response_text, str) and response_text.strip():
+            # The user-facing reply. As "content" it is also what history,
+            # Jev and later agents see for this message.
+            payload["response"] = response_text
+            payload["content"] = response_text
 
         # Build message envelope
         msg = Message(

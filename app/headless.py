@@ -37,7 +37,7 @@ def _final_answer(task: Task, since_index: int) -> str:
         if getattr(msg, "sender", "") in ("User", "System"):
             continue
         payload = getattr(msg, "payload", {}) or {}
-        text = payload.get("summary") or payload.get("content")
+        text = payload.get("response") or payload.get("summary") or payload.get("content")
         if text:
             return str(text)
     return ""

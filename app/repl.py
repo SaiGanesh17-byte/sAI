@@ -124,7 +124,11 @@ class SaiRepl:
         self._stream_buffer += event.data.get("delta", "")
         agent = event.data.get("agent", "")
         is_jev = agent == "Jev"
-        text = partial_json_string(self._stream_buffer, "answer" if is_jev else "summary")
+        if is_jev:
+            text = partial_json_string(self._stream_buffer, "answer")
+        else:
+            # Show the full reply once it starts streaming; until then the short status line.
+            text = partial_json_string(self._stream_buffer, "response") or partial_json_string(self._stream_buffer, "summary")
         self.activity.stream_preview("sAI" if is_jev else agent, text or "", len(self._stream_buffer))
 
     def _on_agent_started(self, event):
@@ -158,7 +162,7 @@ class SaiRepl:
         summary = ""
         if msg is not None:
             payload = getattr(msg, "payload", {}) or {}
-            summary = payload.get("summary") or payload.get("content") or ""
+            summary = payload.get("response") or payload.get("summary") or payload.get("content") or ""
         if summary:
             self.printer.agent_message(agent, summary)
 

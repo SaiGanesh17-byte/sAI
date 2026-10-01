@@ -474,6 +474,9 @@ class SaiApp(App):
         if response:
             is_dict = isinstance(response, dict)
             summary = getattr(response, "summary", response.get("summary", "") if is_dict else "")
+            payload = getattr(message, "payload", None) or {}
+            if isinstance(payload, dict) and payload.get("response"):
+                summary = payload["response"]  # the agent's full reply, not its status line
             reasoning = getattr(response, "reasoning", response.get("reasoning", []) if is_dict else [])
             confidence = getattr(response, "confidence", response.get("confidence", 0.95) if is_dict else 0.95)
 
