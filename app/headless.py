@@ -89,6 +89,7 @@ def run_headless(prompt: str, accept_edits: bool = False, output_format: str = "
         return False
 
     event_bus.subscribe(EventType.TOOL_STARTED, lambda e: progress(f"⏺ {tool_call_label(e.data.get('tool', ''), e.data.get('args'))}"))
+    event_bus.subscribe(EventType.LLM_FALLBACK, lambda e: progress(f"  (free model busy: {e.data.get('from')} -> {e.data.get('to')})"))
 
     tokens_before = (token_tracker.input_tokens, token_tracker.output_tokens)
     agents = orchestrator.agents

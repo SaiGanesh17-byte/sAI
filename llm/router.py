@@ -16,6 +16,8 @@ class ModelRouter:
         provider = settings.get("provider", "nvidia")
         
         t_kind = task_kind.lower()
+        if t_kind == "compactor" and settings.get("compact_model"):
+            return provider, settings["compact_model"]
         if t_kind == "jev":
             # An unset/empty jev_model reuses reasoner_model, so Jev always tracks
             # whatever model the rest of the app is actually configured to use.

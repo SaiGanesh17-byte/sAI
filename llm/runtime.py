@@ -1,3 +1,4 @@
+import json
 from typing import List, Dict, Iterator, Any, Optional
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -6,6 +7,70 @@ from core.events import event_bus, EventType
 from llm.router import ModelRouter
 
 logger = logging.getLogger("sai.llm.runtime")
+
+def is_free_model(model: str) -> bool:
+    """OpenRouter's free models: '<id>:free', or the 'openrouter/free' auto-router."""
+    return bool(model) and (model.endswith(":free") or model == "openrouter/free")
+
+
+def looks_like_json_object(text: str) -> bool:
+    cleaned = (text or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        cleaned = cleaned[4:] if cleaned.lower().startswith("json") else cleaned
+    start, end = cleaned.find("{"), cleaned.rfind("}")
+    if start == -1 or end <= start:
+        return False
+    try:
+        return isinstance(json.loads(cleaned[start:end + 1]), dict)
+    except json.JSONDecodeError:
+        return False
+
+
+# OpenRouter caps free-model requests per account per day (50 without credits). Once
+# that cap is hit, every free call is a guaranteed 429, so stop trying until the
+# reset time OpenRouter reports instead of paying a wasted round-trip per call.
+_FREE_MODELS_PAUSED_UNTIL = {"t": 0.0}
+
+
+def note_free_model_failure(model: str, error: Exception) -> None:
+    if not is_free_model(model):
+        return
+    text = str(error)
+    if "free-models-per-day" not in text and "free_tier_daily" not in text:
+        return
+    import re
+    import time
+    match = re.search(r"X-RateLimit-Reset'?:\s*'?(\d{10,13})", text)
+    if match:
+        reset = int(match.group(1))
+        _FREE_MODELS_PAUSED_UNTIL["t"] = reset / 1000 if reset > 10**11 else float(reset)
+    else:
+        _FREE_MODELS_PAUSED_UNTIL["t"] = time.time() + 3600
+
+
+def free_models_paused() -> bool:
+    import time
+    return time.time() < _FREE_MODELS_PAUSED_UNTIL["t"]
+
+
+def model_candidates(model: str, settings: dict) -> List[str]:
+    """
+    Models to try, in order. A free model is followed by the other configured
+    free models (free_model_chain) and then the paid free_fallback_model; with
+    use_free_models off, free models are skipped entirely.
+    """
+    if not is_free_model(model):
+        return [model]
+    fallback = settings.get("free_fallback_model") or settings.get("reasoner_model") or ""
+    if not settings.get("use_free_models", True) or (free_models_paused() and fallback):
+        return [fallback or model]
+    chain = [model] + [m for m in (settings.get("free_model_chain") or []) if m != model]
+    chain = chain[:1 + max(0, int(settings.get("free_model_retries", 1)))]
+    if fallback and fallback not in chain:
+        chain.append(fallback)
+    return chain
+
 
 class ContextCompressor:
     """
@@ -114,19 +179,49 @@ class LLMRuntime:
         })
 
         try:
-            if settings.get("stream_responses", True):
-                # Stream so UIs can show text as it's generated (LLM_DELTA
-                # events); the caller still gets the complete string back.
-                chunks = []
-                for delta in provider.stream(messages, model=model_name, temperature=temperature, **kwargs):
-                    chunks.append(delta)
-                    event_bus.publish(EventType.LLM_DELTA, {"agent": task_kind, "delta": delta}, source="LLMRuntime")
-                response_content = "".join(chunks)
-            else:
-                response_content = provider.complete(messages, model=model_name, temperature=temperature, **kwargs)
-
-            if not ResponseValidator.validate(response_content):
-                raise ValueError("Response failed structure validation checks.")
+            candidates = model_candidates(model_name, settings)
+            for attempt, candidate in enumerate(candidates):
+                if attempt:
+                    # Free models are often rate-limited or briefly unavailable; fall
+                    # straight back to the paid model instead of failing the turn.
+                    event_bus.publish(
+                        EventType.LLM_FALLBACK,
+                        {"from": candidates[attempt - 1], "to": candidate, "agent": task_kind},
+                        source="LLMRuntime",
+                    )
+                    event_bus.publish(
+                        EventType.LLM_REQUEST,
+                        {"model": candidate, "provider": provider_name, "prompt_len": len(compressed_prompt)},
+                        source="LLMRuntime",
+                    )
+                call_kwargs = dict(kwargs)
+                if is_free_model(candidate):
+                    # Several free models reject structured outputs outright (400). The
+                    # JSON check below covers what response_format would have enforced.
+                    call_kwargs.pop("response_format", None)
+                if is_free_model(candidate) and len(candidates) > 1:
+                    # The OpenAI client waits up to 10 minutes by default; a stalled free
+                    # model must give way to the fallback quickly. (Applies between
+                    # streamed chunks, so a slow-but-progressing answer isn't cut off.)
+                    call_kwargs.setdefault("timeout", float(settings.get("free_model_timeout", 30)))
+                try:
+                    response_content = self._complete(provider, messages, candidate, temperature, task_kind,
+                                                      settings.get("stream_responses", True), **call_kwargs)
+                    if not ResponseValidator.validate(response_content):
+                        raise ValueError("Response failed structure validation checks.")
+                    # A free model can "succeed" with junk -- OpenRouter has served a
+                    # safety classifier's "User Safety: safe" for a JSON request. When
+                    # JSON was asked for and another model is left to try, require it.
+                    if (kwargs.get("response_format") and attempt < len(candidates) - 1
+                            and not looks_like_json_object(response_content)):
+                        raise ValueError(f"expected a JSON object, got: {response_content[:80]!r}")
+                    model_name = candidate
+                    break
+                except Exception as e:
+                    note_free_model_failure(candidate, e)
+                    if attempt == len(candidates) - 1:
+                        raise
+                    logger.info(f"{candidate} failed ({str(e)[:120]}); falling back to {candidates[attempt + 1]}")
 
             event_bus.publish(
                 EventType.LLM_RESPONSE,
@@ -146,6 +241,18 @@ class LLMRuntime:
                 "path": "",
                 "command": ""
             })
+
+    @staticmethod
+    def _complete(provider, messages, model: str, temperature: float, task_kind: str, stream: bool, **kwargs) -> str:
+        if not stream:
+            return provider.complete(messages, model=model, temperature=temperature, **kwargs)
+        # Stream so UIs can show text as it's generated (LLM_DELTA events);
+        # the caller still gets the complete string back.
+        chunks = []
+        for delta in provider.stream(messages, model=model, temperature=temperature, **kwargs):
+            chunks.append(delta)
+            event_bus.publish(EventType.LLM_DELTA, {"agent": task_kind, "delta": delta}, source="LLMRuntime")
+        return "".join(chunks)
 
     @retry(
         stop=stop_after_attempt(3),

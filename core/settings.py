@@ -13,7 +13,15 @@ DEFAULT_SETTINGS = {
     "ollama_url": "http://localhost:11434",
     "coder_model": "qwen/qwen3-coder-plus",
     "reasoner_model": "openai/gpt-4o-mini",
-    "jev_model": "",  # empty = reuse whatever "reasoner_model" is currently configured
+    "jev_model": "inclusionai/ling-3.0-flash-sante:free",  # routing on every turn -- a free model; empty = reuse reasoner_model
+    "compact_model": "inclusionai/ling-3.0-flash-sante:free",  # summarizing history for /compact
+    "use_free_models": True,  # master switch for ':free' models (agents, Jev, compaction)
+    # Tried in order after a free model fails or returns junk (benchmarked 2026-10-01). Avoid the
+    # "openrouter/free" auto-router: it has served a safety classifier for a chat request.
+    "free_model_chain": ["inclusionai/ling-3.0-flash-sante:free", "nvidia/nemotron-3-super-120b-a12b:free", "cohere/north-mini-code:free"],
+    "free_model_retries": 1,  # how many other free models to try before the paid fallback
+    "free_model_timeout": 30,  # seconds of silence before giving up on a free model
+    "free_fallback_model": "openai/gpt-4o-mini",  # paid model used when free ones are rate-limited or fail
     "jev_json_mode": True,
     "agents_json_mode": True,
     "context_token_budget": 32000,

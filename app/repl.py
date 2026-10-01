@@ -110,12 +110,17 @@ class SaiRepl:
         event_bus.subscribe(EventType.ERROR, self._on_error)
         event_bus.subscribe(EventType.LLM_REQUEST, self._on_llm_request)
         event_bus.subscribe(EventType.LLM_DELTA, self._on_llm_delta)
+        event_bus.subscribe(EventType.LLM_FALLBACK, self._on_llm_fallback)
 
     # ------------------------------------------------------------------
     # Streaming: agents answer in JSON, so rather than echo raw JSON, pull
     # out the human-facing field as it arrives and show it above the spinner.
     # It moves into the permanent transcript once the response completes.
     # ------------------------------------------------------------------
+    def _on_llm_fallback(self, event):
+        self.printer.note(f"[{DIM}]free model busy ({escape(str(event.data.get('from')))}) → "
+                          f"using {escape(str(event.data.get('to')))}[/{DIM}]")
+
     def _on_llm_request(self, event):
         self._stream_buffer = ""
         self.activity.clear_preview()
@@ -629,7 +634,7 @@ class SaiRepl:
         self.task.goal = self.INIT_PROMPT
         before = self._token_snapshot()
         try:
-            self._run_single_agent("Documentation")
+            self._run_single_agent("Writer")
         finally:
             self.activity.hide()
         self._print_token_footer(before, "single_agent")

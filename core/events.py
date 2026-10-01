@@ -12,6 +12,7 @@ class EventType(Enum):
     LLM_REQUEST = "LLM_REQUEST"
     LLM_RESPONSE = "LLM_RESPONSE"
     LLM_DELTA = "LLM_DELTA"  # one streamed chunk: {"agent", "delta"}
+    LLM_FALLBACK = "LLM_FALLBACK"  # a free model failed: {"from", "to", "agent"}
     TOOL_REQUEST = "TOOL_REQUEST"
     TOOL_STARTED = "TOOL_STARTED"
     TOOL_FINISHED = "TOOL_FINISHED"
