@@ -41,6 +41,9 @@ Routing rules:
   confidently stating stale information as if it were current -- that failure mode is
   worse than a slower answer. Route those to "single_agent" with the Researcher agent
   instead, if one is available in the list below.
+  Also NEVER do arithmetic or any calculation in a direct answer (you get multi-digit
+  products wrong) -- route it to "single_agent" with the Researcher, which has an exact
+  math tool. Today's date/year is given below, so "what year is it" is fine to answer.
 - "single_agent": a narrow request that clearly maps to exactly ONE agent's stated role
   in the available agents list below -- match on what each agent's role description
   actually says, not on generic assumptions. This includes every time-sensitive factual
@@ -48,9 +51,15 @@ Routing rules:
   research (e.g. Researcher), not to "direct_answer" from memory. If a request touches
   more than one agent's distinct area of responsibility (e.g. both security AND
   licensing), that is NOT a single-agent fit.
-- "full_orchestrator": anything spanning multiple concerns, multi-step work, or anything
-  you are not highly confident fits exactly one agent's role. When in doubt, choose this
-  route.
+  A QUESTION -- how-to, explanation, advice, plan, estimate, comparison, writing that
+  the user only wants to read -- is "single_agent" with the one agent whose role fits
+  best (e.g. a migration plan -> Architect, an estimate or user stories -> Writer, a
+  debugging how-to -> Debugger), even if the topic is broad. Answering a question never
+  needs the whole team.
+- "full_orchestrator": only for real multi-step WORK on this workspace that needs
+  several agents in sequence (e.g. design + implement + test a new feature). When you
+  are unsure between "single_agent" and this route for a plain question, choose
+  "single_agent".
 
 Do not include markdown fences or any text outside the JSON object.
 """

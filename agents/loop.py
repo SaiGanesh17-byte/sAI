@@ -11,6 +11,7 @@ declined).
 """
 import difflib
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional
 
@@ -19,7 +20,7 @@ from core.protocol import Message, MessageType
 from core.security import approve_request
 from execution.permissions import PermissionRequestRequired
 
-DEFAULT_MAX_STEPS = 8
+DEFAULT_MAX_STEPS = 12
 
 # Called when an action needs permission: (request, action) -> approved?
 ApproveFn = Callable[[PermissionRequestRequired, dict], bool]
@@ -117,6 +118,76 @@ def execute_with_approval(engine, action: dict, approve: Optional[ApproveFn]) ->
     return ActionOutcome("ok" if result.success else "failed", content)
 
 
+WRAP_UP_NOTES = {
+    "repeating": "You requested exactly the same actions again, so they were not run.",
+    "max_steps": "You have used all the tool steps available for this request.",
+    "declined": "The user declined your last action, so it did not run. Do not ask for it again.",
+    "no_response": "You stopped without writing an answer in \"response\".",
+}
+
+
+def _has_answer(message) -> bool:
+    payload = getattr(message, "payload", {}) or {}
+    return bool(str(payload.get("response") or "").strip())
+
+
+_RESULT_TAG = re.compile(r"^\[(\w+)\((.*?)\) -> (ok|failed|declined)\]")
+
+
+def work_ledger(messages) -> str:
+    """
+    What actually happened this turn, from the tool results themselves. Given to
+    the wrap-up call because a model asked to "summarize" after a messy turn
+    will happily report a fix it never made.
+    """
+    changed, failed_edits, commands = [], [], []
+    for m in messages:
+        if getattr(m, "type", None) != MessageType.TOOL_RESULT:
+            continue
+        match = _RESULT_TAG.match(str((getattr(m, "payload", {}) or {}).get("content", "")))
+        if not match:
+            continue
+        tool, target, status = match.groups()
+        if tool in EDIT_TOOLS:
+            (changed if status == "ok" else failed_edits).append(target)
+        elif tool == "execute_command":
+            commands.append(f"`{target[:80]}` -> {status}")
+    lines = ["Files you actually changed this turn: " + (", ".join(dict.fromkeys(changed)) or "NONE")]
+    if failed_edits:
+        lines.append("Edits that did NOT apply: " + ", ".join(dict.fromkeys(failed_edits)))
+    if commands:
+        lines.append("Commands run: " + "; ".join(commands[-6:]))
+    return "\n".join(lines)
+
+
+def _wrap_up(agent, context, reason: str, source: str, since_index: int = 0):
+    """
+    One last call, no tools: answer from what's already in the history. Without
+    it an early stop leaves the user with the agent's status line ("Searching
+    for the latest Python version.") instead of an answer.
+    """
+    ledger = work_ledger(context.conversation.all()[since_index:])
+    context.conversation.add(Message(
+        sender="System", receiver=agent.name, type=MessageType.TOOL_RESULT,
+        payload={"content": f"[{WRAP_UP_NOTES[reason]} STOP using tools now.\n{ledger}\n"
+                            "Write your final answer to the user in \"response\" with \"actions\": []. "
+                            "Report ONLY what the record above shows: do not say you changed, fixed or "
+                            "verified anything that isn't listed there. If the task is not finished, say "
+                            "so plainly, explain what you found and what still needs to be done.]"},
+    ))
+    event_bus.publish(EventType.AGENT_STARTED, {"agent": agent.name, "turn": "wrap-up"}, source=source)
+    message = agent.run(context)
+    response = message.metadata.get("response")
+    if response is not None:
+        response.actions = []  # a wrap-up never runs tools
+    if isinstance(message.payload, dict):
+        message.payload["actions"] = []
+    context.conversation.add(message)
+    event_bus.publish(EventType.AGENT_FINISHED, {"agent": agent.name, "msg": message, "step": "wrap-up", "final": True},
+                      source=source)
+    return message
+
+
 def run_agent_loop(
     agent,
     context,
@@ -125,13 +196,31 @@ def run_agent_loop(
     max_steps: int = DEFAULT_MAX_STEPS,
     source: str = "AgentLoop",
     is_halted: Optional[Callable[[], bool]] = None,
+    wrap_up_on_decline: bool = False,
 ) -> LoopResult:
     """
     Drives one agent until it stops requesting actions. Every agent message and
     tool result is appended to context.conversation in the order it happened,
     and AGENT_STARTED / AGENT_FINISHED fire once per step so UIs can show
     each intermediate message.
+
+    If the loop ends without a real answer -- repeated actions, the step limit,
+    or a final message with no "response" -- the agent gets one tool-free
+    wrap-up call. After a decline that happens only with wrap_up_on_decline
+    (headless mode, where nobody can redirect it); interactively a "no" hands
+    control straight back to the user, like Claude Code.
     """
+    since_index = len(context.conversation.all())
+    result = _loop(agent, context, execute_action, max_steps, source, is_halted)
+    reason = result.stop_reason
+    if reason == "done" and not _has_answer(result.final_message):
+        reason = "no_response"
+    if reason in ("repeating", "max_steps", "no_response") or (reason == "declined" and wrap_up_on_decline):
+        result.final_message = _wrap_up(agent, context, reason, source, since_index)
+    return result
+
+
+def _loop(agent, context, execute_action, max_steps, source, is_halted) -> LoopResult:
     last_signature = None
     message = None
 

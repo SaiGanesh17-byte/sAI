@@ -56,3 +56,12 @@ def fake_llm_runtime():
             kernel.register_service("llm_runtime", previous)
         else:
             kernel._services.pop("llm_runtime", None)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_free_model_pause(tmp_path, monkeypatch):
+    """Keep the real .sai/free_models_paused_until (written when the OpenRouter
+    daily free cap is hit) from changing test behaviour."""
+    import llm.runtime as rt
+    monkeypatch.setattr(rt, "FREE_PAUSE_FILE", tmp_path / "free_models_paused_until")
+    monkeypatch.setitem(rt._FREE_MODELS_PAUSED_UNTIL, "t", -1.0)

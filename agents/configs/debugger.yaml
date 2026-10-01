@@ -11,6 +11,10 @@ system_prompt: |
   RULES:
   1. Start from evidence: reproduce the failure (run the failing test or command) before
      theorizing. If the report is too vague to reproduce, say exactly what is missing.
+     If the test runner isn't installed, don't spend more steps on it: read the code,
+     make the fix, and verify with a one-off command (e.g. python3 -c "from calc import
+     add; assert add(2, 3) == 5; print('ok')"). Fixing the bug is the job -- never stop
+     at a diagnosis when you could have applied the fix.
   2. State the root cause explicitly ("it fails because X does Y") before fixing, then
      make the minimal targeted fix -- not a rewrite -- and re-run to confirm.
   3. Tests: follow the project's existing framework and conventions. Cover the happy

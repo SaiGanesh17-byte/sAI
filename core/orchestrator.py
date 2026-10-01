@@ -135,7 +135,8 @@ class Orchestrator:
                         outcome.content += f"\n\n⚠️ AUTO-LINTER COMPILATION WARNING:\n{linter_err}\nYour code has syntax or compile errors. You MUST edit the file to fix this error immediately."
         return outcome
 
-    def run(self, task: Task, start_agent: Optional[str] = None, approve: Optional[ApproveFn] = None):
+    def run(self, task: Task, start_agent: Optional[str] = None, approve: Optional[ApproveFn] = None,
+            wrap_up_on_decline: bool = False):
         """
         With `approve`, permission requests are answered inline and the turn
         continues; without it they propagate as PermissionRequestRequired
@@ -211,6 +212,7 @@ class Orchestrator:
                 max_steps=self._max_steps(),
                 source="Orchestrator",
                 is_halted=check_and_reset_halt,
+                wrap_up_on_decline=wrap_up_on_decline,
             )
             message = loop.final_message
             response = message.metadata.get("response") if message else None

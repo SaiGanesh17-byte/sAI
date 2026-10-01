@@ -124,10 +124,11 @@ def test_free_models_never_get_response_format(runtime_with):
     assert seen == [("x:free", False), ("paid/model", True)]
 
 
-def test_daily_free_limit_pauses_free_models(runtime_with, monkeypatch):
+def test_daily_free_limit_pauses_free_models(runtime_with, monkeypatch, tmp_path):
     import time
     import llm.runtime as rt
-    monkeypatch.setitem(rt._FREE_MODELS_PAUSED_UNTIL, "t", 0.0)
+    monkeypatch.setitem(rt._FREE_MODELS_PAUSED_UNTIL, "t", -1.0)
+    monkeypatch.setattr(rt, "FREE_PAUSE_FILE", tmp_path / "pause")
     reset_ms = int((time.time() + 3600) * 1000)
 
     class DailyCap(FlakyProvider):
@@ -147,6 +148,21 @@ def test_daily_free_limit_pauses_free_models(runtime_with, monkeypatch):
     provider.calls.clear()
     runtime.query("p", task_kind="Jev", model="a:free")
     assert provider.calls == ["openai/gpt-4o-mini"]  # no wasted free attempt until the reset
+
+    # A new process (fresh in-memory state) reads the pause back from disk.
+    monkeypatch.setitem(rt._FREE_MODELS_PAUSED_UNTIL, "t", 0.0)
+    assert rt.free_models_paused()
+
+
+def test_paused_free_models_are_skipped_mid_chain(runtime_with, monkeypatch, tmp_path):
+    import time
+    import llm.runtime as rt
+    monkeypatch.setattr(rt, "FREE_PAUSE_FILE", tmp_path / "pause")
+    monkeypatch.setitem(rt._FREE_MODELS_PAUSED_UNTIL, "t", time.time() + 600)
+    provider = FlakyProvider(set())
+    # Even if a chain still lists free models, a paused cap skips straight to the paid one.
+    runtime_with(provider, free_model_chain=["a:free", "b:free"]).query("p", task_kind="Jev", model="a:free")
+    assert provider.calls == ["openai/gpt-4o-mini"]
 
 
 def test_callers_temperature_is_used_unless_overridden(runtime_with):

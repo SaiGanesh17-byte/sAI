@@ -116,11 +116,12 @@ def run_headless(prompt: str, accept_edits: bool = False, output_format: str = "
                     agent, task.context,
                     lambda action: orchestrator.execute_action(task, agent, action, approve),
                     max_steps=orchestrator._max_steps(), source="Headless",
+                    wrap_up_on_decline=True,  # nobody here to redirect it -- answer without that action
                 )
                 stop_reason = loop.stop_reason
             else:
                 progress("sAI → full team")
-                orchestrator.run(task, approve=approve)
+                orchestrator.run(task, approve=approve, wrap_up_on_decline=True)
             result = _final_answer(task, start_index)
     except KeyboardInterrupt:
         progress("Interrupted.")

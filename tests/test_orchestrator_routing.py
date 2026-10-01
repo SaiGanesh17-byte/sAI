@@ -31,7 +31,8 @@ class FakeAgent:
             finished=self.finished,
         )
         msg = Message(
-            sender=self.name, receiver="Orchestrator", type=MessageType.SUMMARY, payload={"summary": response.summary}
+            sender=self.name, receiver="Orchestrator", type=MessageType.SUMMARY,
+            payload={"summary": response.summary, "response": response.summary}
         )
         msg.metadata["response"] = response
         return msg

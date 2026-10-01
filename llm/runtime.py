@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from typing import List, Dict, Iterator, Any, Optional
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -31,6 +32,8 @@ def looks_like_json_object(text: str) -> bool:
 # that cap is hit, every free call is a guaranteed 429, so stop trying until the
 # reset time OpenRouter reports instead of paying a wasted round-trip per call.
 _FREE_MODELS_PAUSED_UNTIL = {"t": 0.0}
+# Persisted so a new `sai` process (every `sai -p`) doesn't re-learn it with a wasted call.
+FREE_PAUSE_FILE = Path(__file__).resolve().parent.parent / ".sai" / "free_models_paused_until"
 
 
 def note_free_model_failure(model: str, error: Exception) -> None:
@@ -47,10 +50,20 @@ def note_free_model_failure(model: str, error: Exception) -> None:
         _FREE_MODELS_PAUSED_UNTIL["t"] = reset / 1000 if reset > 10**11 else float(reset)
     else:
         _FREE_MODELS_PAUSED_UNTIL["t"] = time.time() + 3600
+    try:
+        FREE_PAUSE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        FREE_PAUSE_FILE.write_text(str(_FREE_MODELS_PAUSED_UNTIL["t"]))
+    except OSError:
+        pass
 
 
 def free_models_paused() -> bool:
     import time
+    if not _FREE_MODELS_PAUSED_UNTIL["t"]:
+        try:
+            _FREE_MODELS_PAUSED_UNTIL["t"] = float(FREE_PAUSE_FILE.read_text().strip())
+        except (OSError, ValueError):
+            _FREE_MODELS_PAUSED_UNTIL["t"] = -1.0  # checked; nothing stored
     return time.time() < _FREE_MODELS_PAUSED_UNTIL["t"]
 
 
@@ -184,6 +197,8 @@ class LLMRuntime:
         try:
             candidates = model_candidates(model_name, settings)
             for attempt, candidate in enumerate(candidates):
+                if attempt < len(candidates) - 1 and is_free_model(candidate) and free_models_paused():
+                    continue  # the daily free cap was hit earlier in this same chain
                 if attempt:
                     # Free models are often rate-limited or briefly unavailable; fall
                     # straight back to the paid model instead of failing the turn.

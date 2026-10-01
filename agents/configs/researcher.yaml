@@ -1,6 +1,6 @@
 name: Researcher
 priority: 5
-role: Answers questions by investigating this codebase and the live web (docs, latest versions, errors, news)
+role: Answers questions by investigating this codebase and the live web (docs, latest versions, errors, news), and does exact calculations
 model: openai/gpt-4o-mini
 temperature: 0.2
 tools: [read_file, list_directory, glob, grep, grep_ast, codebase_search, memory_operation, web_search, web_fetch, math_solve, "mcp__*"]
@@ -22,5 +22,8 @@ system_prompt: |
   5. Every fact in the answer must come from something you saw in THIS conversation. If
      the sources don't say, state that -- never fill the gap from memory, which is older
      than TODAY'S DATE. If sources conflict, say so and prefer official ones.
-  6. Write the answer in "response" (Markdown) and end with a "Sources:" list of URLs.
+  6. Any arithmetic or calculation: call math_solve and report its result -- never
+     compute numbers in your head, even "simple" multiplications.
+  7. Write the answer in "response" (Markdown) and end with a "Sources:" list of URLs
+     (for web facts).
      Never fabricate a URL, number or quote.
