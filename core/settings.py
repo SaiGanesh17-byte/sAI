@@ -21,6 +21,7 @@ DEFAULT_SETTINGS = {
     "require_read_before_edit": True,  # agents must read_file an existing file before changing it
     "edit_approval": "ask",  # "ask": show a diff and confirm each edit; "auto": apply edits without asking
     "allow_commands": [],  # command prefixes that never need approval, e.g. ["pytest", "npm test"]
+    "web_fetch_allow_private": False,  # let web_fetch reach localhost/LAN addresses (off: blocks SSRF)
     "agent_max_steps": 8,  # tool-use loop: max agent responses per agent turn
     "auto_compact_tokens": 0,  # summarize history past this many tokens (0 = 60% of context_token_budget)
     "repo_map_token_budget": 1500,  # cap on the repo map included in every agent prompt

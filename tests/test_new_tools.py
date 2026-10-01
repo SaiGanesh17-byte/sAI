@@ -123,13 +123,81 @@ def test_web_fetch_rejects_non_http():
     assert WebFetchTool().execute({"url": "file:///etc/passwd"}).startswith("Error")
 
 
+def _fake_dns(monkeypatch, table):
+    """table: hostname -> IP the fake resolver returns."""
+    import socket
+    from tools import web_fetch
+
+    def getaddrinfo(host, port, *a, **k):
+        if host not in table:
+            raise socket.gaierror("unknown host")
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (table[host], port))]
+
+    monkeypatch.setattr(web_fetch.socket, "getaddrinfo", getaddrinfo)
+    monkeypatch.setattr("core.settings.load_settings", lambda: {"web_fetch_allow_private": False})
+
+
+def _response(status=200, ctype="text/html", text="", location=None):
+    headers = {"content-type": ctype}
+    if location:
+        headers["location"] = location
+    return SimpleNamespace(status_code=status, headers=headers, text=text)
+
+
 def test_web_fetch_converts_html(monkeypatch):
     import httpx
-    resp = SimpleNamespace(status_code=200, headers={"content-type": "text/html"}, url="https://x.dev/a",
-                           text="<title>T</title><main>hello</main>")
-    monkeypatch.setattr(httpx, "get", lambda *a, **k: resp)
+    _fake_dns(monkeypatch, {"x.dev": "93.184.215.14"})
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _response(text="<title>T</title><main>hello</main>"))
     out = WebFetchTool().execute({"url": "https://x.dev/a"})
     assert out.startswith("URL: https://x.dev/a") and "hello" in out
+
+
+@pytest.mark.parametrize("url,ip", [
+    ("http://localhost:8000/admin", "127.0.0.1"),
+    ("http://169.254.169.254/latest/meta-data/", "169.254.169.254"),  # cloud metadata
+    ("http://router.lan/", "192.168.1.1"),
+    ("http://internal.corp/", "10.0.0.5"),
+    ("http://ten.example/", "100.64.0.1"),  # carrier-grade NAT, also not global
+])
+def test_web_fetch_blocks_internal_addresses(monkeypatch, url, ip):
+    import httpx
+    from urllib.parse import urlparse
+    _fake_dns(monkeypatch, {urlparse(url).hostname: ip})
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not connect")))
+    out = WebFetchTool().execute({"url": url})
+    assert out.startswith("Error: refusing to fetch") and "private/internal" in out
+
+
+def test_web_fetch_rechecks_every_redirect_hop(monkeypatch):
+    import httpx
+    _fake_dns(monkeypatch, {"public.dev": "93.184.215.14", "localhost": "127.0.0.1"})
+    calls = []
+
+    def get(url, **k):
+        calls.append(url)
+        return _response(status=302, location="http://localhost:6379/")
+
+    monkeypatch.setattr(httpx, "get", get)
+    out = WebFetchTool().execute({"url": "https://public.dev/go"})
+    assert calls == ["https://public.dev/go"]  # the internal hop was never requested
+    assert "refusing to fetch http://localhost:6379/" in out
+
+
+def test_web_fetch_follows_safe_redirects(monkeypatch):
+    import httpx
+    _fake_dns(monkeypatch, {"a.dev": "93.184.215.14", "b.dev": "93.184.215.15"})
+    responses = iter([_response(status=301, location="https://b.dev/final"), _response(text="<main>moved here</main>")])
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: next(responses))
+    out = WebFetchTool().execute({"url": "https://a.dev/start"})
+    assert out.startswith("URL: https://b.dev/final (redirected from https://a.dev/start)") and "moved here" in out
+
+
+def test_web_fetch_private_allowed_by_setting(monkeypatch):
+    import httpx
+    _fake_dns(monkeypatch, {"localhost": "127.0.0.1"})
+    monkeypatch.setattr("core.settings.load_settings", lambda: {"web_fetch_allow_private": True})
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _response(ctype="text/plain", text="local docs"))
+    assert "local docs" in WebFetchTool().execute({"url": "http://localhost:8000/docs"})
 
 
 # --- background shells -----------------------------------------------------------------
