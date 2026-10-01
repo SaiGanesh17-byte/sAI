@@ -36,7 +36,8 @@ DEFAULT_SETTINGS = {
     "auto_compact_tokens": 0,  # summarize history past this many tokens (0 = 60% of context_token_budget)
     "repo_map_token_budget": 1500,  # cap on the repo map included in every agent prompt
     "use_tool_calling": False,
-    "temperature": 0.2,
+    "temperature": 0.2,  # legacy, unused -- see temperature_override
+    "temperature_override": None,  # a number forces every LLM call to this temperature; None = each caller's own
     "aider_mode": True,
     "graphiti_mode": True,
     "docker_sandbox": False

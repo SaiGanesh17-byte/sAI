@@ -147,7 +147,10 @@ class LLMRuntime:
         settings = load_settings()
         token_budget = settings.get("context_token_budget", 32000)
         compressed_prompt = ContextCompressor.compress(prompt, max_tokens=token_budget)
-        user_temp = settings.get("temperature")
+        # Only an explicit override replaces the caller's temperature (Jev routes at
+        # 0.0, agents use their YAML value). The old "temperature" key always held
+        # 0.2, which silently overrode every call.
+        user_temp = settings.get("temperature_override")
         if user_temp is not None:
             temperature = float(user_temp)
 
@@ -276,7 +279,10 @@ class LLMRuntime:
         settings = load_settings()
         token_budget = settings.get("context_token_budget", 32000)
         compressed_prompt = ContextCompressor.compress(prompt, max_tokens=token_budget)
-        user_temp = settings.get("temperature")
+        # Only an explicit override replaces the caller's temperature (Jev routes at
+        # 0.0, agents use their YAML value). The old "temperature" key always held
+        # 0.2, which silently overrode every call.
+        user_temp = settings.get("temperature_override")
         if user_temp is not None:
             temperature = float(user_temp)
 

@@ -2,8 +2,21 @@
 
 This document details the visual layouts and structures of the user interfaces for sAI.
 
-## Terminal UI (TUI)
-The primary user interface operates inside the developer console. It is built using the `Textual` and `Rich` frameworks.
+## REPL (primary) -- `sai`
+`app/repl.py`, built on Rich and prompt_toolkit, modeled on Claude Code:
+* A transient spinner names who is working (`✻ Coder thinking… (8s · ↑ 7.5k tokens)`)
+  and shows the reply streaming in.
+* Agent messages render as Markdown under `⏺ AgentName`; tool calls as
+  `⏺ Write(path)` with a `⎿` result line; edits show a colored diff and `Allow? [y/N/a]`.
+* Input: history, multi-line (`\` or Option+Enter), Tab completion for `/commands` and
+  `@files`, Esc/Ctrl+C to stop a turn.
+* A footer per turn shows the route Jev chose and the tokens used.
+See the README for commands and settings; `ui/activity.py`, `ui/input.py` and
+`ui/esc_watcher.py` hold the rendering and input code.
+
+## Terminal UI (TUI) -- `sai tui`
+An older Textual interface (`ui/terminal.py`); it shares the agents and tool-use loop but
+not the REPL's newer display and input features. Built using the `Textual` and `Rich` frameworks.
 
 ### WhatsApp-like Thread Concept
 Unlike standard single-scroll terminals, sAI formats conversations as distinct, clean communication streams. The user sees:

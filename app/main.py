@@ -1651,6 +1651,8 @@ def main():
                         current["coder_model"] = data.get("coder_model", current["coder_model"])
                         current["reasoner_model"] = data.get("reasoner_model", current["reasoner_model"])
                         current["temperature"] = float(data.get("temperature", current["temperature"]))
+                        # The web settings panel's temperature is an explicit global override.
+                        current["temperature_override"] = current["temperature"]
                         current["aider_mode"] = bool(data.get("aider_mode", True))
                         current["graphiti_mode"] = bool(data.get("graphiti_mode", True))
                         

@@ -1,71 +1,72 @@
-# LLM Providers & Routing - sAI
+# Models and providers
 
-This document outlines LLM provider integrations, primary target models, and router responsibilities.
+## Providers
 
-## LLM Providers
+**OpenRouter** is the default (`"provider": "openrouter"`): one key for many model
+families. Also implemented: OpenAI direct, Ollama (local), and NVIDIA NIM (its previously
+used models are end-of-life). All are OpenAI-compatible and share
+`llm/providers/base.py::stream_chat`, which streams responses and records token usage.
 
-### Active
-* **OpenRouter**: The active default provider (`"provider": "openrouter"` in
-  `.sai/settings.json`). OpenAI-chat-completions-compatible, so it needs no
-  provider-specific logic beyond a base URL — see `llm/providers/openrouter.py`. Chosen
-  over a single vendor's direct API for access to many model families (OpenAI,
-  Anthropic, Qwen, etc.) through one key and one billing relationship.
+The API key is read from `OPENROUTER_API_KEY` on first launch and then stored in the OS
+keychain (`settings.json` just says `"keyring_secured"`).
 
-### Also implemented, not the default
-* **NVIDIA NIM** (`llm/providers/nvidia.py`): the original provider. Left in place, but
-  every model previously configured against it (Llama 3.1, Nemotron) has since reached
-  end-of-life on NVIDIA's API and returns `410 Gone` — do not re-enable without first
-  confirming live model availability at build.nvidia.com.
-* **OpenAI direct** (`llm/providers/openai.py`), **Ollama** (`llm/providers/ollama.py`,
-  local-only, `ollama_url` setting).
+## Which model does what
 
-### Not yet implemented
-* Anthropic direct, Gemini, Groq, Together, LM Studio, vLLM — straightforward to add
-  following the `BaseProvider` interface (`llm/providers/base.py`) any of the existing
-  providers implement, but none exist today.
+| Work | Model (default) | Set in |
+|---|---|---|
+| Coder, Debugger, DevOps | `qwen/qwen3-coder-plus` | agent YAML `model:` |
+| Architect, Reviewer, Researcher | `openai/gpt-4o-mini` | agent YAML `model:` |
+| Planner, Writer | free model | agent YAML `model:` |
+| Jev routing (every message) | free model | `jev_model` |
+| `/compact` summaries | free model | `compact_model` |
 
----
+An agent's YAML `model:` always wins; `llm/router.py` only picks models for Jev,
+compaction and callers that pass none.
 
-## Current Models (via OpenRouter)
+## Free models and fallback
 
-Set in `core/settings.py::DEFAULT_SETTINGS` / `.sai/settings.json`, live-verified against
-OpenRouter's `/api/v1/models` catalog:
+Model ids ending in `:free` are free on OpenRouter but slow, often rate-limited, and
+uneven in quality. `llm/runtime.py::LLMRuntime.query` therefore tries, in order:
 
-* **`coder_model`**: `qwen/qwen3-coder-plus` — used by agents whose work is
-  code-writing-heavy (Coder, Database, Testing, Debugger, DevOps, Performance).
-* **`reasoner_model`**: `openai/gpt-4o-mini` — used by every other agent, and by Jev's
-  routing decisions (`jev_model` is empty by default, meaning "reuse `reasoner_model`").
+1. the configured free model,
+2. `free_model_retries` (default 1) other models from `free_model_chain`,
+3. the paid `free_fallback_model` (default `openai/gpt-4o-mini`).
 
-Per-agent `model:` fields in `agents/configs/*.yaml` are passed through explicitly (see
-`agents/runtime.py::AgentRuntime.execute_turn` → `llm/runtime.py::LLMRuntime.query`'s
-`model` parameter) rather than being re-derived from the agent's name/task_kind.
+It moves on when a model errors, goes silent for `free_model_timeout` seconds (default
+30), or -- when JSON was requested -- returns something that isn't JSON. Free models are
+never sent `response_format` (several reject it). The REPL shows a dim
+`free model busy → ...` line when this happens.
 
----
+Things to know:
+- **Daily cap.** Accounts without purchased credits get 50 free-model requests per day
+  (OpenRouter offers 1000/day after a $5 credit purchase). When the cap is hit, sAI stops
+  trying free models until the reset time OpenRouter reports.
+- **Privacy.** Free endpoints may log prompts, which include your code. Set
+  `use_free_models: false` to use only paid models.
+- **Don't use `openrouter/free`.** That auto-router picks a random free model per request
+  and has returned a content-safety classifier's output for a chat request.
+- The chain in `core/settings.py` was benchmarked on 2026-10-01 against sAI's own
+  routing and agent-JSON tasks; free-model availability changes, so re-check it now and
+  then (`https://openrouter.ai/api/v1/models`, ids ending in `:free`).
 
-## Router Architecture & Responsibilities
+## Context management
 
-`llm/router.py::ModelRouter.route(task_kind)` is intentionally simple, not the dynamic
-cost/latency-aware system this document originally described as aspirational:
-1. **Model Selection**: `task_kind == "jev"` → `jev_model` (or `reasoner_model` if
-   unset); `"code"`/`"edit"`/`"implement"` substring in `task_kind` → `coder_model`;
-   otherwise → `reasoner_model`. In practice this exists mainly as a *fallback* now that
-   agents pass their own `model` explicitly (above) — it's still the only source of
-   truth for Jev and for any caller that doesn't pass an explicit model.
-2. **Context Window Management**: `llm/runtime.py::ContextCompressor.compress()`
-   estimates prompt size (~4 chars/token) against `context_token_budget`
-   (`DEFAULT_SETTINGS`, default 32000) and, if over budget, trims the
-   `[CONVERSATION HISTORY LOGS]` section of the prompt from the oldest entries forward
-   until it fits, leaving a `"...[older history trimmed to fit context budget]..."`
-   marker. `core/prompt_builder.py` separately compacts older conversation messages
-   (full text → one-line summaries) as it assembles that section in the first place.
-3. **Fallback & Failover**: Provider selection is static per request (from
-   `provider`/`coder_model`/`reasoner_model` settings) — there is no automatic failover
-   to a different provider on error today.
-4. **Retry Policies**: `LLMRuntime.query`/`query_with_tools` are wrapped in `tenacity`
-   (3 attempts, exponential backoff) against the *same* provider/model — this is retry,
-   not failover.
-5. **Structured tool-calling**: `AgentRuntime.execute_turn` can optionally use real
-   OpenAI-style function-calling (`DEFAULT_SETTINGS["use_tool_calling"]`, off by
-   default) via `LLMRuntime.query_with_tools`, built from each tool's existing
-   `BaseTool.schema`. Off by default because support varies by model family on
-   OpenRouter — verify before flipping it on for a given `coder_model`/`reasoner_model`.
+- **Repo map** in each agent prompt is capped by `repo_map_token_budget` (default 1500):
+  full map, then file tree only, then a truncated tree.
+- **History**: the last 10 messages stay verbatim, older ones are shortened, each message
+  is capped at 8k characters, and the whole history section is trimmed to
+  `context_token_budget` (~4 chars/token).
+- **Compaction**: once history passes `auto_compact_tokens` (default 60% of
+  `context_token_budget`), older messages are replaced by an LLM-written summary; `/compact`
+  does it on demand.
+
+## Other settings
+
+- `stream_responses` (default true) -- stream output so the REPL shows text as it arrives.
+- `agents_json_mode`, `jev_json_mode` -- ask paid models for `response_format: json_object`.
+- `use_tool_calling` (default false) -- experimental native function calling. It still
+  sends the whole context as one user message; not yet a real multi-message tool
+  conversation.
+- `temperature_override` (default off) -- forces every call to one temperature; otherwise
+  Jev uses 0.0 and each agent its YAML `temperature`. (Saving the web UI's temperature
+  field sets this.)

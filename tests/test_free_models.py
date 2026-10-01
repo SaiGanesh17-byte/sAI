@@ -147,3 +147,16 @@ def test_daily_free_limit_pauses_free_models(runtime_with, monkeypatch):
     provider.calls.clear()
     runtime.query("p", task_kind="Jev", model="a:free")
     assert provider.calls == ["openai/gpt-4o-mini"]  # no wasted free attempt until the reset
+
+
+def test_callers_temperature_is_used_unless_overridden(runtime_with):
+    seen = []
+
+    class Recorder(FlakyProvider):
+        def stream(self, messages, model, temperature=0.2, **kw):
+            seen.append(temperature)
+            yield "{}"
+
+    runtime_with(Recorder(set()), temperature=0.2).query("p", task_kind="Jev", model="paid", temperature=0.0)
+    runtime_with(Recorder(set()), temperature_override=0.7).query("p", task_kind="Jev", model="paid", temperature=0.0)
+    assert seen == [0.0, 0.7]  # the legacy 'temperature' key no longer overrides

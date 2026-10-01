@@ -61,11 +61,11 @@ consensus/voting between agents.
   * Consensus and voting protocols (Reviewer agent checks Coder work; Coder corrects based on reviews).
 
 ## Phase 5: WhatsApp-Like Terminal UI
-**Status: Done, different implementation.** `app/repl.py` is a real interactive REPL
-with live event-driven streaming and inline permission prompts; `ui/terminal.py` is a
-Textual TUI with the same. Neither literally mimics a WhatsApp layout, but the
-functional goals (collapsible detail, live tool/reasoning visibility, inline user
-prompts) are met.
+**Status: Done, different implementation.** `app/repl.py` is the primary interface: a
+Claude-Code-style REPL with streamed replies, a live "who is working" spinner,
+`⏺ Tool(target)` / `⎿ result` lines, diff approval for edits, history, `@file`
+mentions, Esc to interrupt, sessions and compaction. `ui/terminal.py` (Textual) predates
+most of that and lags behind.
 * **Objective**: Build a clean, transparent, and responsive console layout.
 * **Key Milestones**:
   * Interactive CLI console using `Textual` or `Rich`.
@@ -74,8 +74,10 @@ prompts) are met.
   * User audit and input prompts directly injected into the flow.
 
 ## Phase 6: Desktop App, Web UI, Plugins
-**Status: Partial.** Web UI exists (`app/main.py` + `ui/`) and is the most actively
-developed surface. No Electron desktop shell, no plugin SDK, no MCP support.
+**Status: Partial.** Web UI exists (`app/main.py` + `ui/`). Extensibility now exists in
+Claude Code's form rather than as a plugin SDK: an MCP client for stdio servers
+(`core/mcp.py`), hooks (`core/hooks.py`), custom slash commands (`.sai/commands/`),
+headless mode (`sai -p`). No Electron shell; no HTTP/SSE MCP transport.
 * **Objective**: Standardize production deployment and extensibility.
 * **Key Milestones**:
   * Desktop shell using Electron.

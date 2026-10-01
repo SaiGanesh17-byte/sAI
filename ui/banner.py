@@ -41,20 +41,17 @@ def render_banner(console: Console, cwd: Path, provider: str, coder_model: str, 
     body.append(f"{agent_count} specialists loaded\n\n")
 
     body.append("Tips\n", style=f"bold {VIOLET}")
-    body.append("  Just type a request, e.g. ", style=DIM)
-    body.append('"fix the failing test in tools/math.py"\n', style="italic")
-    body.append("  !<command>", style=f"bold {TEAL}")
-    body.append("   run a shell command directly\n", style=DIM)
-    body.append("  /agents", style=f"bold {TEAL}")
-    body.append("      list all specialist agents\n", style=DIM)
-    body.append("  /tokens", style=f"bold {TEAL}")
-    body.append("      show session token usage (Jev's savings, made visible)\n", style=DIM)
-    body.append("  /help", style=f"bold {TEAL}")
-    body.append("        show all commands\n", style=DIM)
-    body.append("  /clear", style=f"bold {TEAL}")
-    body.append("       reset this session's memory\n", style=DIM)
-    body.append("  exit", style=f"bold {TEAL}")
-    body.append("         leave sAI", style=DIM)
+    tips = [
+        ("@file", "attach a file to your request"),
+        ("!<cmd>", "run a shell command yourself"),
+        ("/init", "write SAI.md -- project rules every agent follows"),
+        ("/compact", "summarize the conversation to free context"),
+        ("/resume", "pick up an earlier session (or launch with sai -c)"),
+        ("/help", "all commands · Esc stops a turn · \\⏎ new line"),
+    ]
+    for i, (cmd, desc) in enumerate(tips):
+        body.append(f"  {cmd:<11}", style=f"bold {TEAL}")
+        body.append(desc + ("\n" if i < len(tips) - 1 else ""), style=DIM)
 
     console.print(
         Panel(
