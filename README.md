@@ -60,6 +60,7 @@ files and run commands. That folder is the workspace; agents can't reach outside
 | Command | |
 |---|---|
 | `/init` | study this project and write `SAI.md` -- instructions every agent follows |
+| `/undo` | roll back the file edits from the last turn (repeat to go further back) |
 | `/compact [focus]` | summarize the conversation to free context (also happens automatically) |
 | `/resume` | continue an earlier session in this folder (`sai -c` / `sai -r` at launch) |
 | `/clear` | start a fresh session (the old one stays resumable) |

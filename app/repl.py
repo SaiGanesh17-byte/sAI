@@ -28,6 +28,8 @@ from core.settings import load_settings, save_settings
 from core.project_instructions import load_project_instructions
 from core.custom_commands import load_custom_commands
 from core.hooks import run_hooks
+from core.checkpoints import apply_undo, checkpoint, plan_undo
+import core.security as core_security
 from core.session import SessionStore, compact_conversation, estimate_conversation_tokens
 from tools.todo import set_todos
 from core.kernel import kernel
@@ -61,6 +63,7 @@ SLASH_COMMANDS = {
     "/help": "show all commands",
     "/agents": "list specialist agents",
     "/init": "write SAI.md for this project",
+    "/undo": "roll back the last turn's file edits",
     "/compact": "summarize history to free context",
     "/resume": "continue an earlier session",
     "/clear": "start a fresh session",
@@ -94,6 +97,8 @@ class SaiRepl:
         self._open_tool: Optional[tuple] = None
         self._stream_buffer = ""
         self._announced_tool: Optional[str] = None
+        # (transaction id at turn start, the request) -- one per turn, for /undo.
+        self._turn_marks: list = []
         self.esc = EscWatcher()
         self._register_events()
 
@@ -449,6 +454,10 @@ class SaiRepl:
             self.printer.note(f"[{DIM}]attached {escape(names)}[/{DIM}]")
         routing_text = stripped + (f"\n(attached files: {names})" if attached else "")
 
+        # Edits are recorded under this session; the checkpoint marks where this turn starts.
+        core_security.CURRENT_SESSION_ID = self.session_id
+        self._turn_marks.append((checkpoint(), stripped))
+
         self._auto_compact_if_needed()
         before = self._token_snapshot()
         self._current_agent = ""
@@ -531,6 +540,7 @@ class SaiRepl:
   [{TEAL}]/agents[/{TEAL}]   list all specialist agents and their roles
   [{TEAL}]/tokens[/{TEAL}]   show cumulative session token usage (alias: /cost)
   [{TEAL}]/clear[/{TEAL}]    start a fresh session (the old one stays saved)
+  [{TEAL}]/undo[/{TEAL}]     roll back the file edits from the last turn (repeat to go further back)
   [{TEAL}]/compact[/{TEAL}]  summarize the conversation so far to free up context · /compact <what to focus on>
   [{TEAL}]/resume[/{TEAL}]   pick an earlier session in this folder to continue
   [{TEAL}]/mcp[/{TEAL}]      show connected MCP servers and their tools
@@ -590,6 +600,10 @@ class SaiRepl:
             self.console.print(f"[{DIM}]Started a fresh session (the previous one is saved -- /resume to go back).[/{DIM}]")
             return
 
+        if cmd == "/undo":
+            self._undo_last_turn()
+            return
+
         if cmd == "/compact":
             self._compact(focus=parts[1] if len(parts) > 1 else "")
             return
@@ -605,6 +619,43 @@ class SaiRepl:
             return
 
         self.console.print(f"[{DIM}]Unknown command '{cmd}'. Try /help.[/{DIM}]")
+
+    def _undo_last_turn(self):
+        """Restore the files the most recent turn (with edits) changed."""
+        while self._turn_marks:
+            since_id, request = self._turn_marks[-1]
+            plan = plan_undo(self.session_id, since_id)
+            if plan.restores:
+                break
+            self._turn_marks.pop()  # that turn changed no files; look further back
+        else:
+            self.printer.note(f"[{DIM}]Nothing to undo -- no file edits recorded in this session.[/{DIM}]")
+            return
+
+        rel = lambda p: str(Path(p).relative_to(self.workspace)) if Path(p).is_relative_to(self.workspace) else p
+        self.console.print(f"\n[bold {VIOLET}]Undo the edits from:[/bold {VIOLET}] {escape(request[:80])}")
+        for r in plan.safe:
+            action = "delete (it was new)" if r.before is None else "restore previous version"
+            self.console.print(f"  [{TEAL}]↺[/{TEAL}] {escape(rel(r.path))} [{DIM}]· {action}[/{DIM}]")
+        for r in plan.conflicts:
+            self.console.print(f"  [yellow]![/yellow] {escape(rel(r.path))} [{DIM}]· changed since sAI edited it -- will be left alone[/{DIM}]")
+        if not plan.safe:
+            self.printer.note("[yellow]Every file from that turn was changed afterwards; nothing restored.[/yellow]")
+            self._turn_marks.pop()
+            return
+        answer = self.console.input("  [bold yellow]Restore these files? \\[y/N][/bold yellow] ").strip().lower()
+        if answer not in ("y", "yes"):
+            self.printer.note(f"[{DIM}]Nothing changed.[/{DIM}]")
+            return
+        restored = apply_undo(plan)
+        self._turn_marks.pop()
+        self.orchestrator.execution_engine.file_versions.clear()  # agents must re-read restored files
+        self.task.context.conversation.add(Message(
+            sender="System", receiver="All", type=MessageType.TOOL_RESULT,
+            payload={"content": "The user undid the previous turn's file edits; these files were restored: "
+                                + ", ".join(rel(p) for p in restored)},
+        ))
+        self.printer.note(f"Restored {len(restored)} file{'s' if len(restored) != 1 else ''}.")
 
     def _show_mcp(self):
         from core.mcp import mcp_manager
