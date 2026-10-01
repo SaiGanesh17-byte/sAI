@@ -132,8 +132,12 @@ Requests to free endpoints may be logged by their providers -- set `use_free_mod
 ## Development
 
 ```bash
-venv/bin/python -m pytest -q
+venv/bin/python -m pytest -q          # unit tests (fake models, free, ~10s)
+venv/bin/python evals/run_evals.py    # real-model evals: 19 prompts across personas (~180k tokens)
 ```
+
+Unit tests can't tell a good answer from a bad one; run the evals after changing agent
+prompts, models or routing. `--only <ids>` / `--persona <name>` run a subset.
 
 Layout: `app/` (REPL, headless, web server), `agents/` (runtime, tool-use loop, configs),
 `core/` (orchestrator, security, sessions, hooks, MCP), `llm/` (providers, routing,
