@@ -27,6 +27,7 @@ from core.security import (
 from core.settings import load_settings, save_settings
 from core.project_instructions import load_project_instructions
 from core.custom_commands import load_custom_commands
+from core.hooks import run_hooks
 from core.session import SessionStore, compact_conversation, estimate_conversation_tokens
 from tools.todo import set_todos
 from core.kernel import kernel
@@ -412,9 +413,18 @@ class SaiRepl:
             )
             return
 
+        submit = run_hooks("UserPromptSubmit", {"prompt": stripped})
+        for warning in submit.warnings:
+            self.printer.note(f"[yellow]{escape(warning)}[/yellow]")
+        if submit.blocked:
+            self.printer.note(f"[red]Blocked by a UserPromptSubmit hook:[/red] {escape(submit.reason)}")
+            return
+
         # @path mentions attach file contents for the agents. Jev only routes,
         # so it gets the short message plus the list of attached names.
         goal, attached = expand_file_mentions(stripped, self.workspace)
+        if submit.context:
+            goal += f"\n\n[Context added by a UserPromptSubmit hook]\n{submit.context}"
         for path in attached:
             if path.is_file():
                 # Treat an attached file as read, like Claude Code's @-mentions,
@@ -462,6 +472,8 @@ class SaiRepl:
 
         self.activity.hide()
         self._print_token_footer(before, decision.route)
+        for warning in run_hooks("Stop", {"prompt": stripped, "route": decision.route}).warnings:
+            self.printer.note(f"[yellow]{escape(warning)}[/yellow]")
 
     # ------------------------------------------------------------------
     # Token usage footer — Jev exists specifically to keep most turns off

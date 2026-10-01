@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 from core.kernel import kernel
 from core.events import event_bus, EventType
 from execution.permissions import PermissionChecker, PermissionRequestRequired
+from core.hooks import run_hooks
 
 @dataclass
 class ToolResult:
@@ -67,6 +68,11 @@ class ExecutionEngine:
                     f"Read it again before editing.")
         return None
 
+    @staticmethod
+    def _publish_hook_warnings(result) -> None:
+        for warning in result.warnings:
+            event_bus.publish(EventType.ERROR, {"msg": warning}, source="Hooks")
+
     def _remember_file_version(self, tool_name: str, args: Dict[str, Any]) -> None:
         if tool_name in ("read_file", "write_file", "patch_file", "edit_file") and args.get("path"):
             target = _workspace_path(args["path"])
@@ -122,12 +128,22 @@ class ExecutionEngine:
         try:
             from core.security import mask_secrets
             guard_error = self._read_before_edit_error(tool_name, args)
+            if not guard_error:
+                pre = run_hooks("PreToolUse", {"args": args}, tool=tool_name)
+                self._publish_hook_warnings(pre)
+                if pre.blocked:
+                    guard_error = f"Error: blocked by a PreToolUse hook: {pre.reason}"
             stdout_content = guard_error or mask_secrets(tool.execute(args))
             duration_ms = (time.time() - start_time) * 1000
 
             success = not stdout_content.startswith("Error")
             if success:
                 self._remember_file_version(tool_name, args)
+                post = run_hooks("PostToolUse", {"args": args, "output": stdout_content[:OUTPUT_PREVIEW_CHARS]}, tool=tool_name)
+                self._publish_hook_warnings(post)
+                if post.blocked:
+                    # Exit 2 after the fact can't undo the tool -- it's feedback for the agent.
+                    stdout_content += f"\n\n[PostToolUse hook feedback]\n{post.reason}"
             stderr_content = "" if success else stdout_content
 
             result = ToolResult(

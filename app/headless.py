@@ -18,6 +18,7 @@ from typing import Optional
 from agents.loop import run_agent_loop
 from core.custom_commands import load_custom_commands
 from core.events import event_bus, EventType
+from core.hooks import run_hooks
 from core.orchestrator import Orchestrator
 from core.protocol import Message, MessageType
 from core.security import set_current_workspace
@@ -62,9 +63,18 @@ def run_headless(prompt: str, accept_edits: bool = False, output_format: str = "
     if stdin_text:
         prompt = f"{prompt}\n\n[Piped input]\n{stdin_text[:MAX_STDIN_CHARS]}"
 
+    submit = run_hooks("UserPromptSubmit", {"prompt": prompt})
+    for warning in submit.warnings:
+        progress(f"warning: {warning}")
+    if submit.blocked:
+        print(f"Blocked by a UserPromptSubmit hook: {submit.reason}", file=sys.stderr)
+        return 2
+
     orchestrator = Orchestrator()
     task = Task(goal="")
     goal, attached = expand_file_mentions(prompt, workspace)
+    if submit.context:
+        goal += f"\n\n[Context added by a UserPromptSubmit hook]\n{submit.context}"
     for path in attached:
         if path.is_file():
             orchestrator.execution_engine.file_versions[str(path)] = path.stat().st_mtime_ns
@@ -121,6 +131,8 @@ def run_headless(prompt: str, accept_edits: bool = False, output_format: str = "
             print(f"Error: {e}", file=sys.stderr)
         return 1
 
+    for warning in run_hooks("Stop", {"prompt": prompt, "route": decision.route}).warnings:
+        progress(f"warning: {warning}")
     if denied and stop_reason == "done":
         stop_reason = "declined"
     usage = {"input_tokens": token_tracker.input_tokens - tokens_before[0],

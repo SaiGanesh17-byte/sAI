@@ -110,6 +110,9 @@ def test_outside_path_request_carries_absolute_path(stub_tool_registry, tmp_work
 
 
 def test_tool_output_has_secrets_masked(stub_tool_registry, tmp_workspace, monkeypatch):
+    # load_settings() re-exports the real Keychain keys into os.environ; stub it
+    # so the fake key set below is the one in effect.
+    monkeypatch.setattr("core.settings.load_settings", lambda: {})
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-secret-value-123")
 
     class LeakyTool(NoOpTool):
