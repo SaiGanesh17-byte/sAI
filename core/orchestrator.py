@@ -21,6 +21,7 @@ from tools.find import GlobTool, GrepTool
 from tools.web_fetch import WebFetchTool
 from tools.terminal import BashOutputTool, KillShellTool
 from tools.todo import TodoWriteTool
+from tools.delegate import DelegateTool
 from repository.context import RepositoryContext
 from execution.engine import ExecutionEngine
 from agents.loop import ActionOutcome, ApproveFn, DEFAULT_MAX_STEPS, execute_with_approval, run_agent_loop
@@ -69,6 +70,7 @@ class Orchestrator:
             tool_reg.register(BashOutputTool())
             tool_reg.register(KillShellTool())
             tool_reg.register(TodoWriteTool())
+            tool_reg.register(DelegateTool())
             # MCP servers from settings start once per process; failures are
             # recorded (see /mcp) rather than breaking startup.
             from core.mcp import mcp_manager
@@ -88,7 +90,8 @@ class Orchestrator:
         except (TypeError, ValueError):
             return DEFAULT_MAX_STEPS
 
-    def execute_action(self, task: Task, agent, action: dict, approve: Optional[ApproveFn] = None) -> ActionOutcome:
+    def execute_action(self, task: Task, agent, action: dict, approve: Optional[ApproveFn] = None,
+                       depth: int = 0) -> ActionOutcome:
         """
         Runs one agent action: activity tracking, inline approval, and the
         post-write hooks (repo-map cache invalidation + auto-linter feedback).
@@ -104,6 +107,8 @@ class Orchestrator:
                 f"Error: the {agent.name} agent can't use '{tool_name}'. Use one of your listed tools, "
                 f"or hand off (next_agent) to an agent that has it.",
             )
+        if tool_name == "delegate":
+            return self._delegate(task, agent, tool_args, approve, depth)
         target_path = tool_args.get("path", tool_args.get("target_file", tool_args.get("TargetFile", "")))
         target_cmd = tool_args.get("command", tool_args.get("CommandLine", ""))
         update_current_activity({"status": "executing", "tool": tool_name, "path": str(target_path), "command": str(target_cmd)})
@@ -134,6 +139,49 @@ class Orchestrator:
                     else:
                         outcome.content += f"\n\n⚠️ AUTO-LINTER COMPILATION WARNING:\n{linter_err}\nYour code has syntax or compile errors. You MUST edit the file to fix this error immediately."
         return outcome
+
+    def _delegate(self, task: Task, caller, args: dict, approve: Optional[ApproveFn], depth: int) -> ActionOutcome:
+        """
+        Runs another agent on a standalone sub-task in a FRESH context and returns
+        only its final answer, so the caller's history (re-sent every step) gets
+        one result instead of every file and search the sub-agent went through.
+        One level deep: a delegated agent can't delegate again.
+        """
+        from tools.delegate import MAX_RESULT_CHARS
+
+        name = str(args.get("agent", "")).strip()
+        sub_task_text = str(args.get("task", "")).strip()
+        target = next((a for a in self.agents if a.name.lower() == name.lower()), None)
+        if depth >= 1:
+            return ActionOutcome("failed", "Error: a delegated agent can't delegate again -- do the work yourself.")
+        if target is None or target is caller:
+            names = ", ".join(a.name for a in self.agents if a is not caller)
+            return ActionOutcome("failed", f"Error: can't delegate to '{name}'. Choose one of: {names}.")
+        if not sub_task_text:
+            return ActionOutcome("failed", "Error: 'task' is required -- describe what to find or do and what to report.")
+
+        label = {"agent": target.name, "task": sub_task_text[:100]}
+        event_bus.publish(EventType.TOOL_STARTED, {"tool": "delegate", "args": label}, source="Delegate")
+        sub = Task(goal=sub_task_text)
+        sub.context.conversation.add(Message(
+            sender="User", receiver=target.name, type=MessageType.TASK,
+            payload={"content": f"[Delegated by the {caller.name} agent -- answer for it, not the end user]\n{sub_task_text}"},
+        ))
+        try:
+            loop = run_agent_loop(
+                target, sub.context,
+                lambda action: self.execute_action(sub, target, action, approve, depth=depth + 1),
+                max_steps=self._max_steps(), source="Delegate",
+            )
+        finally:
+            task.context.current_agent = caller.name
+        payload = (loop.final_message.payload if loop.final_message else {}) or {}
+        answer = str(payload.get("response") or payload.get("summary") or "(no answer)")
+        if len(answer) > MAX_RESULT_CHARS:
+            answer = answer[:MAX_RESULT_CHARS] + "\n...[truncated]"
+        ok = loop.stop_reason in ("done", "repeating", "max_steps")
+        event_bus.publish(EventType.TOOL_FINISHED, {"tool": "delegate", "success": ok, "output": answer}, source="Delegate")
+        return ActionOutcome("ok" if ok else "failed", f"{target.name} reports:\n{answer}")
 
     def run(self, task: Task, start_agent: Optional[str] = None, approve: Optional[ApproveFn] = None,
             wrap_up_on_decline: bool = False):

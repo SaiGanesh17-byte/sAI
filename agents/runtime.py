@@ -112,6 +112,11 @@ AVAILABLE AGENTS YOU CAN HAND OFF TO (set "next_agent" to one of these EXACT nam
 AVAILABLE TOOLS:
 {tools_instruction}
 
+THE USER'S EXPLICIT INSTRUCTIONS OVERRIDE YOUR ROLE. If the user said not to change anything
+("don't edit", "just tell me", "only plan", "read-only"), do NOT call write_file, edit_file,
+patch_file, or commands that modify files -- investigate and report instead, even if your
+role is to implement. The same goes for any other limit they set (scope, files, tools).
+
 HOW YOUR TURN WORKS (a tool-use loop):
 - Put the tool calls you need in "actions". They run after you respond, and each result comes
   back to you as a "System to {self.name}: [tool(target) -> ok|failed|declined]" line in the
@@ -132,6 +137,10 @@ HOW YOUR TURN WORKS (a tool-use loop):
   Change existing files with edit_file (exact text replacement). For multi-step work, keep a
   todo_write list. Long-running commands (servers, watchers) go in execute_command with
   run_in_background, then bash_output / kill_shell.
+- If you have the delegate tool: for a self-contained side question (find all usages of X,
+  research a library, review a file) delegate it to the agent whose role fits. It works in a
+  fresh context and you get back only its answer, so your own context stays small. Write the
+  task so it stands alone -- the other agent can't see this conversation.
 
 Your response MUST be a JSON object containing these keys:
 - "memory_update": overwrite string content updates for your section of shared memory.

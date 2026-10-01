@@ -101,6 +101,7 @@ class SaiRepl:
         self._announced_tool: Optional[str] = None
         # (transaction id at turn start, the request) -- one per turn, for /undo.
         self._turn_marks: list = []
+        self._delegate_depth = 0  # >0 while a delegated helper agent is working
         self.esc = EscWatcher()
         self._register_events()
 
@@ -144,6 +145,9 @@ class SaiRepl:
         self.activity.stream_preview("sAI" if is_jev else agent, text or "", len(self._stream_buffer))
 
     def _on_agent_started(self, event):
+        if event.source == "Delegate":
+            self.activity.show(f"{event.data.get('agent', '')} (helper) thinking")
+            return
         self._current_agent = event.data.get("agent", "")
         self.activity.show(f"{self._current_agent} thinking")
 
@@ -154,7 +158,9 @@ class SaiRepl:
         if self._announced_tool == tool:
             self._announced_tool = None  # shown with its diff at approval time
         else:
-            self.printer.tool_call(tool_call_label(tool, args))
+            self.printer.tool_call(tool_call_label(tool, args), indent=self._delegate_depth)
+        if tool == "delegate":
+            self._delegate_depth += 1  # the helper's own tool calls nest under this line
         who = self._current_agent or "sAI"
         self.activity.show(f"{who} running {TOOL_LABELS.get(tool, tool)}")
 
@@ -162,13 +168,18 @@ class SaiRepl:
         tool = event.data.get("tool", "")
         args = self._open_tool[1] if self._open_tool and self._open_tool[0] == tool else {}
         ok = event.data.get("success", True)
-        self.printer.tool_result(tool_result_summary(tool, args, ok, event.data.get("output", "")), ok)
+        if tool == "delegate":
+            self._delegate_depth = max(0, self._delegate_depth - 1)
+        self.printer.tool_result(tool_result_summary(tool, args, ok, event.data.get("output", "")), ok,
+                                 indent=self._delegate_depth)
         self._open_tool = None
         if self._current_agent:
             self.activity.show(f"{self._current_agent} thinking")
 
     def _on_agent_finished(self, event):
         self.activity.clear_preview()
+        if event.source == "Delegate":
+            return  # a helper's messages are summarized by its Delegate(...) result line
         agent = event.data.get("agent", "")
         msg = event.data.get("msg")
         summary = ""

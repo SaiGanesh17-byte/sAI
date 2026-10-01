@@ -83,3 +83,33 @@ def test_decide_llm_exception_falls_back(fake_llm_runtime):
     assert decision.route == "full_orchestrator"
     assert decision.fallback is True
     assert "provider is down" in decision.reasoning
+
+
+import pytest
+from jev.decision import quick_math
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("What is 17 * 23 * 41? Just the number.", "16031"),
+    ("17*23", "391"),
+    ("calculate (2^10)/4", "256"),
+    ("what is 10 / 4?", "5/2 ≈ 2.5"),
+    ("what is 1,000 x 3", "3000"),
+    ("17 - 20", "-3"),
+])
+def test_quick_math_answers_plain_arithmetic_exactly(text, expected):
+    assert quick_math(text).endswith(f"**{expected}**")
+
+
+@pytest.mark.parametrize("text", [
+    "what is a monad?", "what is python 3.12?", "what is 7 * 8 in binary?",
+    "how many 3s in 333", "what is 2026-10-01", "42", "explain 2 + 2 to a child",
+])
+def test_quick_math_leaves_everything_else_to_the_llm(text):
+    assert quick_math(text) is None
+
+
+def test_jev_answers_arithmetic_without_an_llm_call(fake_llm_runtime):
+    decision = JevRouter().decide("what is 17 * 23 * 41?", ["Researcher"])
+    assert decision.route == "direct_answer" and "16031" in decision.answer
+    assert fake_llm_runtime.calls == []

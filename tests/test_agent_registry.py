@@ -51,7 +51,7 @@ def test_registry_agents_sorted_by_priority():
 KNOWN_TOOLS = {
     "read_file", "write_file", "patch_file", "edit_file", "list_directory", "execute_command",
     "bash_output", "kill_shell", "git_operation", "web_search", "web_fetch", "grep_ast",
-    "codebase_search", "glob", "grep", "run_python_script", "memory_operation", "math_solve", "todo_write",
+    "codebase_search", "glob", "grep", "run_python_script", "memory_operation", "math_solve", "todo_write", "delegate",
 }
 
 
@@ -93,5 +93,5 @@ def test_agent_prompt_lists_only_allowed_tools(fake_llm_runtime, tmp_workspace):
     reviewer = next(a for a in orch.agents if a.name == "Reviewer")
     reviewer.run(Task(goal="review").context)
     prompt = fake_llm_runtime.calls[-1]["prompt"]
-    tools_section = prompt.split("AVAILABLE TOOLS:")[1].split("HOW YOUR TURN WORKS")[0]
+    tools_section = prompt.split("AVAILABLE TOOLS:")[1].split("THE USER'S EXPLICIT INSTRUCTIONS")[0]
     assert "read_file" in tools_section and "write_file" not in tools_section and "execute_command" not in tools_section

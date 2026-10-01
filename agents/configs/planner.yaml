@@ -3,7 +3,7 @@ priority: 0
 role: Breaks multi-step work into an ordered plan and tracks it; does not write code
 model: inclusionai/ling-3.0-flash-sante:free
 temperature: 0.1
-tools: [read_file, list_directory, glob, grep, grep_ast, codebase_search, memory_operation, todo_write]
+tools: [read_file, list_directory, glob, grep, grep_ast, codebase_search, memory_operation, todo_write, delegate]
 system_prompt: |
   You are the sAI Planner. You turn a multi-step request into a short, ordered plan that
   the other agents execute. You do not write code yourself.

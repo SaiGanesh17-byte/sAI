@@ -52,7 +52,8 @@ Routing rules:
   more than one agent's distinct area of responsibility (e.g. both security AND
   licensing), that is NOT a single-agent fit.
   A QUESTION -- how-to, explanation, advice, plan, estimate, comparison, writing that
-  the user only wants to read -- is "single_agent" with the one agent whose role fits
+  the user only wants to read, or any request that says not to change anything ("don't
+  edit", "just tell me what would change") -- is "single_agent" with the one agent whose role fits
   best (e.g. a migration plan -> Architect, an estimate or user stories -> Writer, a
   debugging how-to -> Debugger), even if the topic is broad. Answering a question never
   needs the whole team.
@@ -63,6 +64,47 @@ Routing rules:
 
 Do not include markdown fences or any text outside the JSON object.
 """
+
+
+# "what is 17 * 23 * 41?", "calculate (2^10)/4", "17*23" -- plain arithmetic only.
+_ARITH_ONLY = re.compile(
+    r"^\s*(?:(?:what\s+is|what's|whats|calculate|compute|evaluate|solve)\s+)?"
+    r"(?P<expr>[\d\s.,+\-*/x×÷^()%]+?)"
+    r"\s*(?:\?|=\s*\??)?\s*(?:[.!]?\s*(?:just the (?:number|answer|result)|only the (?:number|answer))\.?)?\s*$",
+    re.IGNORECASE,
+)
+
+
+def quick_math(text: str) -> Optional[str]:
+    """
+    Exact answer for a message that is just arithmetic, via sympy -- no LLM. Models
+    (Jev and agents alike) state wrong products with confidence (17*23*41 came back
+    as 15331 and 8,351). Anything wordier returns None and is routed normally.
+    """
+    match = _ARITH_ONLY.match(text or "")
+    if not match:
+        return None
+    expr = match.group("expr").strip()
+    if re.search(r"\b\d{4}-\d{1,2}-\d{1,2}\b", expr):
+        return None  # a date like 2026-10-01, not a subtraction
+    if not re.search(r"\d", expr) or not re.search(r"\d\s*[+\-*/x×÷^%]\s*\(?\s*\d", expr):
+        return None  # needs at least one operator between numbers
+    normalized = (expr.replace(",", "").replace("×", "*").replace("x", "*").replace("X", "*")
+                  .replace("÷", "/").replace("^", "**"))
+    try:
+        from sympy import Integer, Rational, nsimplify, sympify
+        value = sympify(normalized, rational=True)
+        if not value.is_number:
+            return None
+        if value.is_Integer or (isinstance(value, Rational) and value.q == 1):
+            shown = str(int(value))
+        elif isinstance(value, Rational):
+            shown = f"{value} ≈ {float(value):.10g}"
+        else:
+            shown = f"{float(value):.10g}"
+    except Exception:
+        return None
+    return f"{expr} = **{shown}**"
 
 
 @dataclass
@@ -92,6 +134,11 @@ class JevRouter:
         goal = (goal or "").strip()
         if not goal:
             return self._fallback("Empty input.")
+
+        quick = quick_math(goal)
+        if quick is not None:
+            return JevDecision(route="direct_answer", answer=quick, reasoning="Plain arithmetic, computed exactly.",
+                               confidence=1.0)
 
         prompt = self._build_prompt(goal, available_agents, recent_turns, agent_roles)
 

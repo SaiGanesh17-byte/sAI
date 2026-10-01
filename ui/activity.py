@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional
 from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
+from rich.padding import Padding
 from rich.markup import escape
 from rich.spinner import Spinner
 from rich.table import Table
@@ -58,6 +59,7 @@ TOOL_LABELS = {
     "bash_output": "BashOutput",
     "kill_shell": "KillShell",
     "todo_write": "Todos",
+    "delegate": "Delegate",
 }
 
 
@@ -69,6 +71,9 @@ def tool_call_label(tool: str, args: Optional[Dict[str, Any]]) -> str:
     """'write_file', {'path': 'a.py'} -> 'Write(a.py)'."""
     args = args or {}
     name = TOOL_LABELS.get(tool, tool or "?")
+    if tool == "delegate":
+        task = " ".join(str(args.get("task", "")).split())
+        return f"Delegate({args.get('agent', '?')}: {task[:60] + '…' if len(task) > 60 else task})"
     if tool and tool.startswith("mcp__"):
         # mcp__github__create_issue -> github:create_issue
         _, server, mcp_tool = (tool.split("__", 2) + ["", ""])[:3]
@@ -114,34 +119,35 @@ class ActivityPrinter:
     def __init__(self, console: Console):
         self.console = console
 
-    def _bulleted(self, bullet_style: str, head: Text, body=None) -> None:
+    def _bulleted(self, bullet_style: str, head: Text, body=None, indent: int = 0) -> None:
         grid = Table.grid(padding=(0, 1))
         grid.add_column(no_wrap=True)
         grid.add_column()
         grid.add_row(Text(BULLET, style=bullet_style), head)
         if body is not None and (body.markup.strip() if isinstance(body, Markdown) else body.plain.strip()):
             grid.add_row("", body)
-        self.console.print(grid)
+        self.console.print(Padding(grid, (0, 0, 0, 4 * indent)) if indent else grid)
 
     def agent_message(self, agent: str, text: str) -> None:
         self.console.print()
         # Rendered as Markdown (code blocks, lists, bold) like Claude Code's replies.
         self._bulleted(VIOLET, Text(agent, style=f"bold {VIOLET}"), Markdown(text or ""))
 
-    def tool_call(self, label: str) -> None:
-        self.console.print()
-        self._bulleted(TEAL, Text(label, style="bold"))
+    def tool_call(self, label: str, indent: int = 0) -> None:
+        if not indent:
+            self.console.print()
+        self._bulleted(TEAL, Text(label, style="bold"), indent=indent)
 
-    def _elbow(self, body: Text) -> None:
+    def _elbow(self, body: Text, indent: int = 0) -> None:
         # Grid, not a plain print, so wrapped lines stay indented under the text.
         grid = Table.grid(padding=(0, 1))
         grid.add_column(no_wrap=True)
         grid.add_column()
         grid.add_row(Text(f"  {ELBOW} ", style=DIM), body)
-        self.console.print(grid)
+        self.console.print(Padding(grid, (0, 0, 0, 4 * indent)) if indent else grid)
 
-    def tool_result(self, summary: str, ok: bool = True) -> None:
-        self._elbow(Text(summary, style=DIM if ok else "red"))
+    def tool_result(self, summary: str, ok: bool = True, indent: int = 0) -> None:
+        self._elbow(Text(summary, style=DIM if ok else "red"), indent=indent)
 
     DIFF_MAX_LINES = 60
 
