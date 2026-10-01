@@ -141,7 +141,10 @@ class JevRouter:
         if recent_turns:
             history = "\nRecent conversation (most recent last):\n" + "\n".join(f"- {t}" for t in recent_turns[-4:])
 
+        from agents.runtime import current_date_note
         return f"""{SYSTEM_PROMPT}
+
+{current_date_note()}
 
 Available agents: {agents_list}
 {history}

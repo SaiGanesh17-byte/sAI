@@ -35,6 +35,16 @@ def parse_json_response(content: str, agent_name: str) -> dict:
         "actions": []
     }
 
+def current_date_note() -> str:
+    """Models assume it's still the year their training data ends -- e.g. searching
+    for "latest Spring Boot version 2023" and answering with a 2023 release."""
+    from datetime import date
+    today = date.today()
+    return (f"TODAY'S DATE: {today:%A, %B} {today.day}, {today.year}. Your training data is older than this, "
+            "so for anything that changes over time (latest versions, releases, prices, news, current "
+            "events) trust tool results over your memory, and never assume an earlier year.")
+
+
 class AgentRuntime:
     """
     Generic Agent Runtime. Executes reasoning loops by compiling context 
@@ -82,6 +92,8 @@ class AgentRuntime:
 
 You are the '{self.name}' agent in a collaborative multi-agent loop.
 Your role is: {self.role}
+
+{current_date_note()}
 
 AVAILABLE AGENTS YOU CAN HAND OFF TO (set "next_agent" to one of these EXACT names, or null if you are finished):
 {roster_instruction}
