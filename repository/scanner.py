@@ -21,19 +21,21 @@ class RepositoryScanner:
         files = []
         for root, dirs, filenames in os.walk(self.workspace_path):
             dirs[:] = [d for d in dirs if not self.ignore_parser.is_ignored(Path(root) / d)]
-            
             for f in filenames:
                 file_path = Path(root) / f
-                if self.ignore_parser.is_ignored(file_path):
-                    continue
-                
-                if self._repo:
-                    try:
-                        rel_path = file_path.relative_to(self.workspace_path)
-                        if self._repo.ignored(str(rel_path)):
-                            continue
-                    except Exception:
-                        pass
-                
-                files.append(file_path)
+                if not self.ignore_parser.is_ignored(file_path):
+                    files.append(file_path)
+
+        if self._repo and files:
+            # One `git check-ignore` for all paths. Asking per file spawned a git
+            # process for each one: ~5.7s for a 165-file repo on every launch.
+            try:
+                import subprocess
+                rels = [str(f.relative_to(self.workspace_path)) for f in files]
+                out = subprocess.run(["git", "-C", str(self.workspace_path), "check-ignore", "--stdin"],
+                                     input="\n".join(rels), capture_output=True, text=True, timeout=30)
+                ignored = set(out.stdout.splitlines())  # exit 1 = nothing ignored; still fine
+                files = [f for f, rel in zip(files, rels) if rel not in ignored]
+            except Exception:
+                pass
         return files

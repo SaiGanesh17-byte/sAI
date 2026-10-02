@@ -38,6 +38,13 @@ def parse_json_response(content: str, agent_name: str) -> dict:
         "actions": []
     }
 
+def compact_signature(schema: Dict[str, Any]) -> str:
+    """'(element*, ref*, button)' -- parameter names, * = required."""
+    props = (schema or {}).get("properties") or {}
+    required = set((schema or {}).get("required") or [])
+    return "(" + ", ".join(f"{p}*" if p in required else p for p in props) + ")"
+
+
 @functools.lru_cache(maxsize=1)
 def environment_note() -> str:
     """Facts about the machine the agent's commands run on, detected once. Agents otherwise
@@ -136,10 +143,19 @@ class AgentRuntime:
         tool_reg = kernel.get_service("tool_registry")
         tool_desc = []
         if tool_reg:
+            # MCP servers this agent uses start on first need, not at launch.
+            from core.mcp import mcp_manager
+            for mcp_tool in mcp_manager.ensure_for_patterns([p for p in self.tools if p.startswith("mcp__")]):
+                tool_reg.register(mcp_tool)
             for idx, (name, details) in enumerate(self._available_tools(tool_reg).items(), 1):
                 desc = details.get("description", "")
                 schema = details.get("schema", {})
-                tool_desc.append(f"{idx}. {name}: {desc}\n   Usage schema: {json.dumps(schema)}")
+                if name.startswith("mcp__"):
+                    # Deferred schema (like Claude Code's deferred tools): a signature
+                    # line instead of the full JSON schema; tool_schema gives the rest.
+                    tool_desc.append(f"{idx}. {name}{compact_signature(schema)}: {desc[:160]}")
+                else:
+                    tool_desc.append(f"{idx}. {name}: {desc}\n   Usage schema: {json.dumps(schema)}")
         else:
             tool_desc = [
                 "1. read_file: Read files inside the workspace sandbox.",

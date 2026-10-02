@@ -79,3 +79,11 @@ def _isolate_project_memory(tmp_path, monkeypatch):
     """Keep tests from reading or writing the real per-project memory stores."""
     import memory.graphiti as graphiti
     monkeypatch.setattr(graphiti, "PROJECTS_ROOT", tmp_path / "projects")
+
+
+@pytest.fixture(autouse=True)
+def _no_real_mcp_servers(monkeypatch):
+    """Agents start MCP servers lazily from the user's real settings; tests never should.
+    (tests/test_mcp.py builds its own MCPManager against a fake server.)"""
+    from core.mcp import mcp_manager
+    monkeypatch.setattr(mcp_manager, "ensure_for_patterns", lambda patterns, config=None: [])

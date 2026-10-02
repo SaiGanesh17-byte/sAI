@@ -235,10 +235,9 @@ class MCPTool(BaseTool):
 
     @property
     def description(self) -> str:
-        # First paragraph only: server descriptions run to several hundred tokens
-        # each and are repeated in every prompt of every agent that has the tool.
-        first = self._description.split("\n\n")[0].strip()
-        return f"[MCP {self.server.name}] {first[:300]}"
+        # Agent prompts show only a short prefix of this (see AgentRuntime); the
+        # tool_schema tool returns it in full.
+        return f"[MCP {self.server.name}] {self._description}"
 
     @property
     def permissions(self) -> list:
@@ -282,6 +281,37 @@ class MCPManager:
         self._started = False
         self._lock = threading.Lock()
 
+    def ensure_for_patterns(self, patterns: List[str], config: Optional[Dict[str, dict]] = None) -> List[MCPTool]:
+        """
+        Starts (once) only the servers these mcp__<server>__ patterns refer to, and
+        returns their tools. Launch stays fast: a plain question starts no server,
+        the GitHub server starts the first time the GitHub agent runs.
+        """
+        import fnmatch
+        if not patterns:
+            return []
+        if config is None:
+            from core.settings import load_settings
+            config = load_settings().get("mcp_servers") or {}
+        from core.security import get_current_workspace
+        names = [n for n in config if any(fnmatch.fnmatch(f"mcp__{n}__x", p) or p.startswith(f"mcp__{n}__")
+                                           for p in patterns)]
+        with self._lock:
+            todo = [(n, config[n]) for n in names if n not in self.status
+                    and isinstance(config[n], dict) and not config[n].get("disabled") and config[n].get("command")]
+            if todo:
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=len(todo)) as pool:
+                    results = list(pool.map(lambda item: self._start_one(item[0], item[1], str(get_current_workspace())), todo))
+                for name, server, tools, error in results:
+                    if error:
+                        self.status[name] = ServerStatus(name, ok=False, error=error)
+                        continue
+                    self.servers[name] = server
+                    self.tools.extend(tools)
+                    self.status[name] = ServerStatus(name, ok=True, tools=[t.tool for t in tools])
+            return [t for t in self.tools if t.server.name in names]
+
     def ensure_started(self, config: Optional[Dict[str, dict]] = None, cwd: Optional[str] = None) -> List[MCPTool]:
         with self._lock:
             if self._started:
@@ -290,27 +320,36 @@ class MCPManager:
             if config is None:
                 from core.settings import load_settings
                 config = load_settings().get("mcp_servers") or {}
-            for name, spec in config.items():
-                if not isinstance(spec, dict) or spec.get("disabled") or not spec.get("command"):
-                    continue
-                try:
-                    env = resolve_env(spec.get("env") or {})
-                except MCPError as e:
-                    self.status[name] = ServerStatus(name, ok=False, error=str(e))
-                    continue
-                server = MCPServer(name, spec["command"], spec.get("args"), env, cwd=cwd)
-                try:
-                    server.start(timeout=float(spec.get("startup_timeout", STARTUP_TIMEOUT)))
-                    specs = server.list_tools()
-                except (MCPError, OSError) as e:
-                    server.close()
-                    self.status[name] = ServerStatus(name, ok=False, error=str(e).strip())
+            wanted = [(name, spec) for name, spec in config.items()
+                      if isinstance(spec, dict) and not spec.get("disabled") and spec.get("command")]
+            # Start servers in parallel: npx-launched servers take seconds each, and
+            # sequential startup would add them all up on every launch.
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=max(1, len(wanted))) as pool:
+                results = list(pool.map(lambda item: self._start_one(item[0], item[1], cwd), wanted))
+            for name, server, tools, error in results:
+                if error:
+                    self.status[name] = ServerStatus(name, ok=False, error=error)
                     continue
                 self.servers[name] = server
-                new_tools = [MCPTool(server, s) for s in specs if s.get("name")]
-                self.tools.extend(new_tools)
-                self.status[name] = ServerStatus(name, ok=True, tools=[t.tool for t in new_tools])
+                self.tools.extend(tools)
+                self.status[name] = ServerStatus(name, ok=True, tools=[t.tool for t in tools])
             return self.tools
+
+    @staticmethod
+    def _start_one(name: str, spec: dict, cwd: Optional[str]):
+        try:
+            env = resolve_env(spec.get("env") or {})
+        except MCPError as e:
+            return name, None, [], str(e)
+        server = MCPServer(name, spec["command"], spec.get("args"), env, cwd=cwd)
+        try:
+            server.start(timeout=float(spec.get("startup_timeout", STARTUP_TIMEOUT)))
+            specs = server.list_tools()
+        except (MCPError, OSError) as e:
+            server.close()
+            return name, None, [], str(e).strip()
+        return name, server, [MCPTool(server, s) for s in specs if s.get("name")], ""
 
     def shutdown(self) -> None:
         for server in self.servers.values():

@@ -142,3 +142,44 @@ def test_allow_rules_accept_globs(monkeypatch):
     assert security.is_mcp_tool_allowed("mcp__github__list_issues")
     assert security.is_mcp_tool_allowed("mcp__github__issue_read")
     assert not security.is_mcp_tool_allowed("mcp__github__issue_write")
+
+
+def test_servers_start_lazily_only_for_matching_patterns(tmp_path, monkeypatch):
+    from core.mcp import MCPManager
+    m = MCPManager()
+    config = {"fake": {"command": sys.executable, "args": [FAKE]},
+              "other": {"command": sys.executable, "args": [FAKE]}}
+    try:
+        assert m.ensure_for_patterns([], config) == [] and m.status == {}
+        tools = m.ensure_for_patterns(["mcp__fake__echo"], config)
+        assert [t.name for t in tools] == ["mcp__fake__echo", "mcp__fake__add", "mcp__fake__fail"]
+        assert set(m.status) == {"fake"}  # "other" not started
+        assert m.ensure_for_patterns(["mcp__fake__*"], config) == tools  # started once
+    finally:
+        m.shutdown()
+
+
+def test_mcp_tools_are_listed_compactly(monkeypatch):
+    from agents.runtime import compact_signature
+    schema = {"type": "object", "properties": {"element": {}, "ref": {}, "button": {}}, "required": ["element", "ref"]}
+    assert compact_signature(schema) == "(element*, ref*, button)"
+
+
+def test_tool_schema_tool_returns_full_schema(manager, tmp_path):
+    from core.kernel import kernel
+    from tools.registry import ToolRegistry
+    from tools.tool_schema import ToolSchemaTool
+    had, prev = "tool_registry" in kernel._services, kernel._services.get("tool_registry")
+    reg = ToolRegistry()
+    for t in manager.ensure_started({"fake": {"command": sys.executable, "args": [FAKE]}}, cwd=str(tmp_path)):
+        reg.register(t)
+    kernel.register_service("tool_registry", reg)
+    try:
+        out = ToolSchemaTool().execute({"tool": "mcp__fake__echo"})
+        assert '"required": [' in out and "text" in out
+        assert ToolSchemaTool().execute({"tool": "nope"}).startswith("Error")
+    finally:
+        if had:
+            kernel.register_service("tool_registry", prev)
+        else:
+            kernel._services.pop("tool_registry", None)

@@ -47,3 +47,20 @@ def test_list_directory_outside_sandbox_rejected(tmp_workspace):
     tool = ListDirectoryTool()
     result = tool.execute({"path": "/definitely/outside/the/sandbox"})
     assert "outside the workspace sandbox" in result
+
+
+def test_scanner_honours_gitignore_with_one_git_call(tmp_path, monkeypatch):
+    import subprocess
+    from repository.scanner import RepositoryScanner
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / ".gitignore").write_text("secret.txt\nbuild_out/\n")
+    (tmp_path / "keep.py").write_text("")
+    (tmp_path / "secret.txt").write_text("")
+    (tmp_path / "build_out").mkdir()
+    (tmp_path / "build_out" / "x.js").write_text("")
+    calls = []
+    real_run = subprocess.run
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: calls.append(a[0]) or real_run(*a, **k))
+    names = sorted(p.name for p in RepositoryScanner(tmp_path).scan())
+    assert names == [".gitignore", "keep.py"]
+    assert sum("check-ignore" in c for c in calls) == 1

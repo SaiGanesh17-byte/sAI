@@ -51,7 +51,7 @@ def test_registry_agents_sorted_by_priority():
 KNOWN_TOOLS = {
     "read_file", "write_file", "patch_file", "edit_file", "list_directory", "execute_command",
     "bash_output", "kill_shell", "git_operation", "web_search", "web_fetch", "grep_ast",
-    "codebase_search", "glob", "grep", "run_python_script", "memory_operation", "math_solve", "todo_write", "delegate",
+    "codebase_search", "glob", "grep", "run_python_script", "memory_operation", "math_solve", "todo_write", "delegate", "tool_schema",
 }
 
 

@@ -155,6 +155,18 @@ brew install github-mcp-server && gh auth login
 `$(command)` env values run at startup, so no token is stored in settings. Read-only tools
 above run without asking; anything that writes to GitHub asks first.
 
+## More MCP servers
+
+Also configured the same way (all open source, launched with `npx`, no API keys). Each starts
+the first time an agent that uses it runs, and agents see MCP tools as compact signatures
+(full schemas on demand via `tool_schema`) to keep prompts small:
+
+| Server | Used by | For |
+|---|---|---|
+| `@playwright/mcp` | Coder, Debugger | a real headless browser: open, click, type, screenshot, console errors |
+| `@upstash/context7-mcp` | Coder, Debugger, Researcher, Architect | current, version-specific library docs |
+| `@modelcontextprotocol/server-memory` | Planner, Architect, Researcher, Writer | a per-project knowledge graph (`MEMORY_FILE_PATH: ${SAI_PROJECT_DIR}/knowledge_graph.jsonl`) |
+
 ## Development
 
 ```bash

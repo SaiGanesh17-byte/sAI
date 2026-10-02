@@ -22,6 +22,7 @@ from tools.web_fetch import WebFetchTool
 from tools.terminal import BashOutputTool, KillShellTool
 from tools.todo import TodoWriteTool
 from tools.delegate import DelegateTool
+from tools.tool_schema import ToolSchemaTool
 from repository.context import RepositoryContext
 from execution.engine import ExecutionEngine
 from agents.loop import ActionOutcome, ApproveFn, DEFAULT_MAX_STEPS, execute_with_approval, run_agent_loop
@@ -71,10 +72,19 @@ class Orchestrator:
             tool_reg.register(KillShellTool())
             tool_reg.register(TodoWriteTool())
             tool_reg.register(DelegateTool())
+            tool_reg.register(ToolSchemaTool())
             # MCP servers from settings start once per process; failures are
             # recorded (see /mcp) rather than breaking startup.
             from core.mcp import mcp_manager
-            for mcp_tool in mcp_manager.ensure_started(cwd=str(get_current_workspace())):
+            from memory.graphiti import workspace_memory_file
+            # Lets server configs keep per-project state, e.g. the Memory server's
+            # "MEMORY_FILE_PATH": "${SAI_PROJECT_DIR}/knowledge_graph.jsonl".
+            project_dir = workspace_memory_file().parent
+            project_dir.mkdir(parents=True, exist_ok=True)
+            os.environ["SAI_PROJECT_DIR"] = str(project_dir)
+            # Servers start lazily (AgentRuntime -> mcp_manager.ensure_for_patterns);
+            # register tools of any already running so a new Orchestrator sees them.
+            for mcp_tool in mcp_manager.tools:
                 tool_reg.register(mcp_tool)
             kernel.register_service("tool_registry", tool_reg)
 
