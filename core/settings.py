@@ -3,7 +3,7 @@ from pathlib import Path
 import os
 import keyring
 
-SETTINGS_FILE = Path("/Users/saiganeshongolu/sAI/.sai/settings.json")
+SETTINGS_FILE = Path(__file__).resolve().parent.parent / ".sai" / "settings.json"
 
 DEFAULT_SETTINGS = {
     "provider": "openrouter",
@@ -37,6 +37,8 @@ DEFAULT_SETTINGS = {
     "daily_budget_usd": 0,  # stop paid model calls once today's spend reaches this (0 = no cap)
     "agent_max_steps": 12,  # tool-use loop: max agent responses per agent turn
     "auto_compact_tokens": 0,  # summarize history past this many tokens (0 = 60% of context_token_budget)
+    "context_graph": True,  # give agents the code/work neighborhood of each request
+    "context_graph_token_budget": 700,
     "repo_map_token_budget": 1500,  # cap on the repo map included in every agent prompt
     "use_tool_calling": False,
     "temperature": 0.2,  # legacy, unused -- see temperature_override

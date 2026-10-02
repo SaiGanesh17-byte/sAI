@@ -52,6 +52,7 @@ dependencies = [
     "watchdog",
     "psutil",
     "prompt_toolkit>=3.0",
+    "keyring",
     "sympy",
 ]
 
@@ -59,6 +60,7 @@ dependencies = [
 dev = [
     "pytest",
     "pytest-asyncio",
+    "fastapi",  # tests/test_weather_dashboard.py
 ]
 
 [project.scripts]

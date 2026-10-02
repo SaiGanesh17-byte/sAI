@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Optional
 from app import config
 
-WORKSPACE_ROOT = Path("/Users/saiganeshongolu/sAI").resolve()
+# sAI's own install folder (wherever it was cloned), not a hard-coded home path.
+WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
 CURRENT_WORKSPACE = WORKSPACE_ROOT
 
 import threading
@@ -74,7 +75,7 @@ COMMANDS_LOCK = threading.Lock()
 import sqlite3
 import datetime
 
-TRANSACTIONS_DB = Path("/Users/saiganeshongolu/sAI/.sai/transactions.db")
+TRANSACTIONS_DB = WORKSPACE_ROOT / ".sai" / "transactions.db"
 
 def init_transactions_db():
     if not TRANSACTIONS_DB.parent.exists():

@@ -1,6 +1,9 @@
 import sys
 from pathlib import Path
 
+# sAI's install folder (the default workspace for the web UI)
+SAI_ROOT = Path(__file__).resolve().parent.parent
+
 # Add project root to sys.path to allow execution from any CWD
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -208,7 +211,7 @@ def main():
                         from core.security import validate_path
                         target_file = Path(path_str)
                         if not target_file.is_absolute():
-                            target_file = Path("/Users/saiganeshongolu/sAI") / target_file
+                            target_file = SAI_ROOT / target_file
                             
                         symbols = []
                         if validate_path(target_file) and target_file.exists() and target_file.is_file():
@@ -236,7 +239,7 @@ def main():
                         path_str = query.get("path", [""])[0].strip()
 
                         import subprocess
-                        cwd = "/Users/saiganeshongolu/sAI"
+                        cwd = str(SAI_ROOT)
 
                         status_res = subprocess.run(["git", "status", "--porcelain", path_str], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                         is_untracked = "??" in status_res.stdout
@@ -424,7 +427,7 @@ def main():
                             # Sanitize literal goal prompts referencing files to directories
                             resolved_path = Path(target_path)
                             if not resolved_path.is_absolute():
-                                resolved_path = Path("/Users/saiganeshongolu/sAI") / resolved_path
+                                resolved_path = SAI_ROOT / resolved_path
                             if resolved_path.exists() and resolved_path.is_dir():
                                 goal = goal.replace("code file at path", "codebase directory at path")
                                 goal = goal.replace("the file at path", "the codebase directory at path")
@@ -432,7 +435,7 @@ def main():
                                 goal = goal.replace("read the file", "read files in the directory")
                         else:
                             from core.security import set_current_workspace
-                            set_current_workspace("/Users/saiganeshongolu/sAI")
+                            set_current_workspace(str(SAI_ROOT))
 
                         # 2. Direct Shell & Git Command Bypass
                         cleaned_goal = goal.strip()
@@ -521,7 +524,7 @@ def main():
                             task.context.memory.notes.append(f"Active Target Path Context: {target_path}")
                             resolved_path = Path(target_path)
                             if not resolved_path.is_absolute():
-                                resolved_path = Path("/Users/saiganeshongolu/sAI") / resolved_path
+                                resolved_path = SAI_ROOT / resolved_path
                             if resolved_path.exists() and resolved_path.is_dir():
                                 # Scan for important source code files to inject as context (max 3 files, max 10KB each)
                                 important_extensions = ['.py', '.js', '.ts', '.html', '.css', '.go']
@@ -626,7 +629,7 @@ def main():
                                 try:
                                     pf_path = Path(pf)
                                     if not pf_path.is_absolute():
-                                        pf_path = Path("/Users/saiganeshongolu/sAI") / pf_path
+                                        pf_path = SAI_ROOT / pf_path
                                     if pf_path.exists() and pf_path.is_file():
                                         pinned_payload += f"\n--- File: {pf_path.name} ---\n{pf_path.read_text(encoding='utf-8', errors='ignore')[:10000]}\n"
                                 except Exception:
@@ -886,7 +889,7 @@ def main():
                         # Resolve path
                         resolved_path = Path(target_file)
                         if not resolved_path.is_absolute():
-                            resolved_path = Path("/Users/saiganeshongolu/sAI") / resolved_path
+                            resolved_path = SAI_ROOT / resolved_path
                             
                         # Validate permission access
                         from core.security import validate_path
@@ -1034,7 +1037,7 @@ def main():
                         # Resolve path
                         resolved_path = Path(target_file)
                         if not resolved_path.is_absolute():
-                            resolved_path = Path("/Users/saiganeshongolu/sAI") / resolved_path
+                            resolved_path = SAI_ROOT / resolved_path
                         
                         abs_path_str = str(resolved_path.resolve())
                         
@@ -1153,7 +1156,7 @@ def main():
                             
                         target_path = Path(path_str)
                         if not target_path.is_absolute():
-                            target_path = Path("/Users/saiganeshongolu/sAI") / target_path
+                            target_path = SAI_ROOT / target_path
                             
                         from core.security import validate_path
                         if not validate_path(target_path):
@@ -1387,7 +1390,7 @@ def main():
                             raise ValueError("Branch name is required.")
                             
                         import subprocess
-                        cwd = "/Users/saiganeshongolu/sAI"
+                        cwd = str(SAI_ROOT)
                         if create:
                             cmd = ["git", "checkout", "-b", branch]
                         else:
@@ -1424,7 +1427,7 @@ def main():
                         target_dir = Path(path_str) if path_str else get_current_workspace()
                         
                         if not target_dir.is_absolute():
-                            target_dir = Path("/Users/saiganeshongolu/sAI") / target_dir
+                            target_dir = SAI_ROOT / target_dir
                             
                         # If a file path is passed, explore its parent directory context instead of failing!
                         if target_dir.exists() and target_dir.is_file():
@@ -1535,7 +1538,7 @@ def main():
                         from core.security import validate_path
                         target_dir = Path(path_str)
                         if not target_dir.is_absolute():
-                            target_dir = Path("/Users/saiganeshongolu/sAI") / target_dir
+                            target_dir = SAI_ROOT / target_dir
                             
                         target_file = target_dir / filename
                         
@@ -1569,7 +1572,7 @@ def main():
                         from core.security import validate_path
                         target_dir = Path(path_str)
                         if not target_dir.is_absolute():
-                            target_dir = Path("/Users/saiganeshongolu/sAI") / target_dir
+                            target_dir = SAI_ROOT / target_dir
                             
                         target_folder = target_dir / foldername
                         
@@ -1601,7 +1604,7 @@ def main():
                         from core.security import validate_path
                         target_path = Path(path_str)
                         if not target_path.is_absolute():
-                            target_path = Path("/Users/saiganeshongolu/sAI") / target_path
+                            target_path = SAI_ROOT / target_path
                             
                         if not validate_path(target_path):
                             self.send_response(403)

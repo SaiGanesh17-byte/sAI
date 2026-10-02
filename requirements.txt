@@ -49,6 +49,7 @@ tqdm
 watchdog
 psutil
 prompt_toolkit>=3.0
+keyring
 
 # Testing
 pytest

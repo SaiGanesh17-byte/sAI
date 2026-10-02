@@ -3,7 +3,7 @@ from typing import Dict, Any, List
 import json
 from core.protocol import Artifact
 
-WORKSPACE_ROOT = Path("/Users/saiganeshongolu/sAI").resolve()
+WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
 
 class ArtifactMemory:
     """
