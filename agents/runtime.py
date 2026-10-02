@@ -63,7 +63,9 @@ def environment_note() -> str:
             has_pytest = subprocess.run([python, "-c", "import pytest"], capture_output=True, timeout=10).returncode == 0
         except Exception:
             has_pytest = False
-        facts.append(f"pytest: {'installed' if has_pytest else f'NOT installed for {python} -- verify with a {python} -c "..." one-liner instead'}")
+        # No nested quotes inside the f-string: that is a SyntaxError before Python 3.12.
+        pytest_note = "installed" if has_pytest else f"NOT installed for {python} -- verify with a one-off {python} -c command instead"
+        facts.append(f"pytest: {pytest_note}")
     for tool in ("node", "npm", "git", "docker", "java", "mvn"):
         if shutil.which(tool):
             facts.append(f"{tool}: available")
