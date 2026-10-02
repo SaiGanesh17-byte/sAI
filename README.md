@@ -107,7 +107,9 @@ are declined (and reported) unless allowed up front.
 | Writer | docs, READMEs, specs, requirements | read/search, web, edit files (no shell) |
 
 Each is a YAML file in `agents/configs/` (prompt, model, and an enforced `tools` list).
-See [docs/AGENTS.md](docs/AGENTS.md).
+Every agent also gets a **context graph** of the request -- the code it touches (definitions,
+imports, importers, tests) and recent edits/errors -- built from the repo index and the agent
+loop's own activity. See [docs/AGENTS.md](docs/AGENTS.md).
 
 ## Configuration
 

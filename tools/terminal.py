@@ -228,6 +228,7 @@ class AsyncProcessManager:
             
         self.is_running = True
         self.history = []
+        self.returncode = None
         self.output_queue = queue.Queue()
         
         def run_thread():
@@ -257,7 +258,7 @@ class AsyncProcessManager:
                     self.history.append(line)
                     
                 self.process.stdout.close()
-                self.process.wait()
+                self.returncode = self.process.wait()
             except Exception as e:
                 err_msg = f"Process error: {e}\n"
                 self.output_queue.put(err_msg)
@@ -366,9 +367,13 @@ class TerminalTool(BaseTool):
         if async_process_manager.is_running:
             output += (f"\n[still running after {timeout}s -- it keeps running; for long commands pass a larger "
                        f"'timeout' or use run_in_background]")
-        if not output:
-            output = "Command completed with no output."
-        return output
+            return output
+        code = getattr(async_process_manager, "returncode", None)
+        if code not in (0, None):
+            # Without the exit status, "No module named pytest" looked like a successful
+            # run and an agent reported "all 7 tests passed".
+            return f"Error: command exited with code {code}\n{output or '(no output)'}"
+        return output or "Command completed with no output (exit code 0)."
 
 
 class BashOutputTool(BaseTool):

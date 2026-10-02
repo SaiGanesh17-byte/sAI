@@ -39,6 +39,7 @@ DEFAULT_SETTINGS = {
     "auto_compact_tokens": 0,  # summarize history past this many tokens (0 = 60% of context_token_budget)
     "context_graph": True,  # give agents the code/work neighborhood of each request
     "context_graph_token_budget": 700,
+    "repo_map_token_budget_with_graph": 500,  # repo map shrinks to an overview when the graph has a focus
     "repo_map_token_budget": 1500,  # cap on the repo map included in every agent prompt
     "use_tool_calling": False,
     "temperature": 0.2,  # legacy, unused -- see temperature_override

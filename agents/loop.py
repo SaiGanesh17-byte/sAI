@@ -47,6 +47,24 @@ def _read_image_path(action: dict, outcome: "ActionOutcome") -> Optional[str]:
     return str(resolve_in_workspace(str((action.get("args") or {}).get("path", ""))).resolve())
 
 
+def _graph_note_request(context) -> None:
+    try:
+        from core.context_graph import graph_for
+        request = next((str((m.payload or {}).get("content", "")) for m in reversed(context.conversation.all())
+                        if getattr(m, "sender", "") == "User"), "")
+        graph_for().note_request(request.split("\n\n[Attached")[0])
+    except Exception:
+        pass  # the graph is an aid; never let it break a turn
+
+
+def _graph_record(action: dict, outcome, agent) -> None:
+    try:
+        from core.context_graph import graph_for
+        graph_for().record_action(action, outcome, getattr(agent, "name", ""))
+    except Exception:
+        pass
+
+
 def describe_action(action: dict) -> str:
     args = action.get("args", {}) or {}
     target = args.get("path") or args.get("script_path") or args.get("command") or args.get("query") or ""
@@ -218,6 +236,7 @@ def run_agent_loop(
     control straight back to the user, like Claude Code.
     """
     since_index = len(context.conversation.all())
+    _graph_note_request(context)
     result = _loop(agent, context, execute_action, max_steps, source, is_halted)
     if result.stop_reason == "done" and _shows_code_instead_of_applying(agent, context.conversation.all(), since_index,
                                                                          result.final_message):
@@ -329,6 +348,7 @@ def _loop(agent, context, execute_action, max_steps, source, is_halted) -> LoopR
             if is_halted and is_halted():
                 raise InterruptedError("Agent loop execution halted by user interrupt.")
             outcome = execute_action(action)
+            _graph_record(action, outcome, agent)
             payload = {"content": f"[{describe_action(action)} -> {outcome.status}]\n{outcome.content}"}
             image = _read_image_path(action, outcome)
             if image:

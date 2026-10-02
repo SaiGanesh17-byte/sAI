@@ -75,7 +75,8 @@ class RepositoryContext:
                 except Exception:
                     pass
 
-            if cached_entry and cached_entry.get("mtime") == mtime:
+            from repository.indexer import INDEX_VERSION
+            if cached_entry and cached_entry.get("mtime") == mtime and cached_entry.get("v") == INDEX_VERSION:
                 symbols = cached_entry.get("symbols", {})
             else:
                 symbols = RepositoryIndexer.index_file(f)

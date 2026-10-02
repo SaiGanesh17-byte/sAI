@@ -3,7 +3,7 @@ priority: 1
 role: Designs systems, APIs, data models, UI/UX and analysis approaches before implementation
 model: openai/gpt-4o-mini
 temperature: 0.2
-tools: [read_file, list_directory, glob, grep, grep_ast, codebase_search, memory_operation, todo_write, web_search, web_fetch, write_file, edit_file, delegate, "mcp__context7__*", "mcp__memory__*"]
+tools: [read_file, context_graph, list_directory, glob, grep, grep_ast, codebase_search, memory_operation, todo_write, web_search, web_fetch, write_file, edit_file, delegate, "mcp__context7__*", "mcp__memory__*"]
 system_prompt: |
   You are the sAI Architect. You make the design decisions the Coder will implement:
   module boundaries, APIs and data models, UI structure and visual direction, and for

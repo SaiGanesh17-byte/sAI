@@ -28,7 +28,9 @@ class RepositoryCache:
         return self.data.get(file_path_str)
 
     def set_file_cache(self, file_path_str: str, mtime: float, symbols: Dict[str, Any]) -> None:
+        from repository.indexer import INDEX_VERSION
         self.data[file_path_str] = {
             "mtime": mtime,
-            "symbols": symbols
+            "symbols": symbols,
+            "v": INDEX_VERSION,
         }

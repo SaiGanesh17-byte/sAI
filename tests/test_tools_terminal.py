@@ -89,3 +89,10 @@ def test_harmless_scripts_and_executables_still_run(tmp_workspace, monkeypatch):
 @pytest.mark.parametrize("script", ["fs.unlinkSync('a')", "require('rimraf')", "FileUtils.rm_rf('x')", "Path('a').unlink()"])
 def test_js_ruby_pathlib_deletes_are_risky(script):
     assert security.find_risky_pattern(script) is not None
+
+
+def test_failed_commands_report_their_exit_code(tmp_workspace):
+    out = TerminalTool().execute({"command": "python3 -c 'import sys; print(\"boom\"); sys.exit(3)'"})
+    assert out.startswith("Error: command exited with code 3") and "boom" in out
+    ok = TerminalTool().execute({"command": "echo fine"})
+    assert ok.strip() == "fine"

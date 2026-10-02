@@ -23,6 +23,7 @@ from tools.terminal import BashOutputTool, KillShellTool
 from tools.todo import TodoWriteTool
 from tools.delegate import DelegateTool
 from tools.tool_schema import ToolSchemaTool
+from tools.context_graph_tool import ContextGraphTool
 from repository.context import RepositoryContext
 from execution.engine import ExecutionEngine
 from agents.loop import ActionOutcome, ApproveFn, DEFAULT_MAX_STEPS, execute_with_approval, run_agent_loop
@@ -73,6 +74,7 @@ class Orchestrator:
             tool_reg.register(TodoWriteTool())
             tool_reg.register(DelegateTool())
             tool_reg.register(ToolSchemaTool())
+            tool_reg.register(ContextGraphTool())
             # MCP servers from settings start once per process; failures are
             # recorded (see /mcp) rather than breaking startup.
             from core.mcp import mcp_manager

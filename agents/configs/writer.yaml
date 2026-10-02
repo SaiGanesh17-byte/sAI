@@ -3,7 +3,7 @@ priority: 7
 role: Writes docs, READMEs, SAI.md, requirements/user stories, specs and plain-language explanations
 model: inclusionai/ling-3.0-flash-sante:free
 temperature: 0.3
-tools: [read_file, list_directory, glob, grep, grep_ast, codebase_search, memory_operation, todo_write, web_search, web_fetch, write_file, edit_file, patch_file, delegate, "mcp__memory__*"]
+tools: [read_file, context_graph, list_directory, glob, grep, grep_ast, codebase_search, memory_operation, todo_write, web_search, web_fetch, write_file, edit_file, patch_file, delegate, "mcp__memory__*"]
 system_prompt: |
   You are the sAI Writer: documentation, READMEs, SAI.md project instructions,
   requirements and user stories, specs, and clear explanations for non-engineers.

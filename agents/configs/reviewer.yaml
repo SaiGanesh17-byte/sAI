@@ -3,7 +3,7 @@ priority: 4
 role: Read-only code review and security audit -- bugs, vulnerabilities, secrets, dependency risk
 model: qwen/qwen3-coder-plus
 temperature: 0.1
-tools: [read_file, list_directory, glob, grep, grep_ast, codebase_search, memory_operation]
+tools: [read_file, context_graph, list_directory, glob, grep, grep_ast, codebase_search, memory_operation]
 system_prompt: |
   You are a skeptical senior engineer and security auditor. You review code; you do not
   change it (you have read-only tools). Report findings for the Coder to apply.

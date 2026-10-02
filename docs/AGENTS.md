@@ -95,3 +95,23 @@ each write their own section of working memory; `/init` uses `Writer`.
 explicit `mcp__<server>__...` patterns. Each tool's description and schema is sent with every
 call the agent makes, and MCP servers are large -- GitHub's default tool set is 45 tools,
 ~12k tokens. The GitHub agent lists 20 tools (~8k tokens); nothing else pays for them.
+
+## Context graph
+
+`core/context_graph.py` keeps a per-project graph that every agent prompt draws on:
+
+- **Code layer** (from the repository index -- Python, JS/TS, Java/Kotlin): file *defines*
+  symbol, file *imports* file (relative imports resolved), test file *covers* file.
+- **Work layer** (recorded by the agent loop after every action, kept in
+  `.sai/projects/<slug>/context_activity.json`): files read, edited and created, commands run,
+  and errors -- tracebacks and `file:line` references in tool output are attached to the files
+  they point at.
+- **Knowledge layer**: matching entities from the Memory MCP server's
+  `knowledge_graph.jsonl` for the project.
+
+Each prompt gets a `[CONTEXT GRAPH]` section (≤ `context_graph_token_budget`, default 700)
+with the *neighborhood* of the request: files it names, files defining symbols it names, files
+touched or erroring this request -- each with its symbols, imports, importers, tests and last
+activity -- plus recent errors and edits. The `context_graph` tool answers the same for any
+file or symbol on demand (definition, every reference, importers, tests). Turn it off with
+`"context_graph": false`.

@@ -116,11 +116,32 @@ class PromptBuilder:
                 f"{instructions}\n\n"
             )
 
+        graph_section = ""
+        if settings.get("context_graph", True):
+            try:
+                from core.context_graph import graph_for
+                request = ""
+                if conversation and hasattr(conversation, "all"):
+                    request = next((str((getattr(m, "payload", {}) or {}).get("content", "")) for m in reversed(conversation.all())
+                                    if getattr(m, "sender", "") == "User"), "")
+                budget = int(settings.get("context_graph_token_budget", 700)) * 4
+                hood = graph_for().neighborhood(request.split("\n\n[Attached")[0], budget_chars=budget)
+                if hood:
+                    graph_section = ("[CONTEXT GRAPH -- code related to this request and recent activity; "
+                                     "query more with the context_graph tool]\n" + hood + "\n\n")
+            except Exception:
+                graph_section = ""
+        if graph_section and repository and hasattr(repository, "get_repo_map"):
+            # The graph already lists the relevant files' symbols; keep the repo map
+            # to a short overview instead of repeating them.
+            overview = int(settings.get("repo_map_token_budget_with_graph", 500)) * 4
+            repo_snapshot = repository.get_repo_map(max_chars=overview)
+
         from tools.todo import get_todos, render_todos
         todos = get_todos()
         todo_section = f"[CURRENT TODO LIST -- keep it updated with todo_write]\n{render_todos(todos)}\n\n" if todos else ""
 
-        prompt = f"""{instructions_section}{todo_section}[SYSTEM CONTEXT & SERVICE REGISTRIES]{aider_directive}
+        prompt = f"""{instructions_section}{todo_section}{graph_section}[SYSTEM CONTEXT & SERVICE REGISTRIES]{aider_directive}
 
 [PERSISTENT MEMORY GRAPH (GRAPHITI)]
 {graphiti_str}
