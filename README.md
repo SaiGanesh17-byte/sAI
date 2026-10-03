@@ -65,6 +65,7 @@ files and run commands. That folder is the workspace; agents can't reach outside
 | `/compact [focus]` | summarize the conversation to free context (also happens automatically) |
 | `/resume` | continue an earlier session in this folder (`sai -c` / `sai -r` at launch) |
 | `/clear` | start a fresh session (the old one stays resumable) |
+| `/council <question>` | several free models answer in parallel, a judge model merges them into one answer |
 | `/cost`, `/budget <usd>` | session cost in dollars and today's spend; set a daily cap (paid models stop, free ones keep working) |
 | `/permissions` | approval rules: `/permissions edits auto\|ask`, `/permissions allow <cmd prefix>` |
 | `/mcp` | connected MCP servers and their tools |
