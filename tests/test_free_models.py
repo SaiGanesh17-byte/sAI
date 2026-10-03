@@ -209,6 +209,8 @@ def test_provider_prefixed_models():
 
 
 def test_openrouter_cap_keeps_other_free_providers(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "k")
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
     monkeypatch.setattr("llm.runtime.free_models_paused", lambda: True)
     s = {"free_fallback_model": "paid", "free_model_retries": 3,
          "free_model_chain": ["x:free", "groq:a", "gemini:b"]}
