@@ -66,7 +66,7 @@ def _scripts_in(command: str) -> List[Path]:
     return paths
 
 
-def _check_scripts_run_by(command: str) -> None:
+def _check_scripts_run_by(command: str, ignore=()) -> None:
     """
     The command text can be harmless while the script it runs is not: with `rm`
     gated, an agent wrote delete_files.py and ran `python3 delete_files.py`,
@@ -81,7 +81,7 @@ def _check_scripts_run_by(command: str) -> None:
             content = script.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        pattern = find_risky_pattern(content)
+        pattern = find_risky_pattern(content, ignore)
         if pattern and not is_script_approved(script):
             raise PermissionRequestRequired(
                 path=str(script),
@@ -90,25 +90,40 @@ def _check_scripts_run_by(command: str) -> None:
             )
 
 
-def check_command(command: str) -> Optional[str]:
+# Shown when an agent asks to run a command outside the OS sandbox (approved one run at a time).
+LEAVE_SANDBOX_REASON = "Run OUTSIDE the sandbox: full access to your files and the network"
+
+
+def check_command(command: str, sandboxed: bool = False, leave_sandbox: bool = False) -> Optional[str]:
     """
     Shared safety gate for foreground and background commands. Raises
     PermissionRequestRequired for risky commands that aren't approved or
-    allowed by a rule; returns an error string for sandbox escapes; None if OK.
+    allowed by a rule, and for any request to run outside the OS sandbox;
+    returns an error string for sandbox escapes; None if OK.
+
+    sandboxed: the command will run under core.sandbox, so patterns that only
+    matter for escaping the workspace don't ask, and the path heuristics below
+    (which the OS now enforces for real) are skipped.
     """
-    from core.security import consume_approved_command, find_risky_pattern, is_command_allowed_by_rule
+    from core.security import (SANDBOX_SAFE_PATTERNS, consume_approved_command, find_risky_pattern,
+                               is_command_allowed_by_rule)
     from execution.permissions import PermissionRequestRequired
 
-    _check_scripts_run_by(command)
+    ignore = SANDBOX_SAFE_PATTERNS if sandboxed else ()
+    _check_scripts_run_by(command, ignore)
 
-    matched_pattern = find_risky_pattern(command)
-    if matched_pattern and not is_command_allowed_by_rule(command):
-        if not consume_approved_command(command):
-            raise PermissionRequestRequired(
-                path=command,
-                reason=f"Destructive command execution approval (matched pattern: '{matched_pattern}').",
-                kind="command",
-            )
+    matched_pattern = find_risky_pattern(command, ignore)
+    risky = bool(matched_pattern) and not is_command_allowed_by_rule(command)
+    if (risky or leave_sandbox) and not consume_approved_command(command):
+        reasons = []
+        if leave_sandbox:
+            reasons.append(LEAVE_SANDBOX_REASON)
+        if risky:
+            reasons.append(f"Destructive command execution approval (matched pattern: '{matched_pattern}')")
+        raise PermissionRequestRequired(path=command, reason="; ".join(reasons) + ".", kind="command")
+
+    if sandboxed:
+        return None
 
     # Command Path Travel Sanitization Check. Still a heuristic (e.g. it can't
     # see paths built at runtime) -- docker_sandbox is the real boundary.
@@ -130,6 +145,16 @@ def check_command(command: str) -> Optional[str]:
     return None
 
 
+def prepare_command(command: str, cwd: str, sandbox: bool):
+    """(command line, env) to run: under the OS sandbox, in docker, or as-is."""
+    from core.settings import load_settings
+    settings = load_settings()
+    if sandbox:
+        from core.sandbox import sandboxed_shell
+        return sandboxed_shell(command, cwd, settings)
+    return wrap_for_sandbox(command, cwd, settings), None
+
+
 class BackgroundShells:
     """Long-running commands (dev servers, watchers, slow test suites) the agent
     starts, then polls with bash_output and stops with kill_shell."""
@@ -141,15 +166,15 @@ class BackgroundShells:
         self._lock = threading.Lock()
         self._counter = 0
 
-    def start(self, command: str, cwd: str) -> str:
+    def start(self, command: str, cwd: str, sandbox: bool = False) -> str:
         import os
-        from core.settings import load_settings
 
         with self._lock:
             self._counter += 1
             shell_id = f"bg{self._counter}"
+        run_cmd, env = prepare_command(command, cwd, sandbox)
         proc = subprocess.Popen(
-            wrap_for_sandbox(command, cwd, load_settings()), shell=True, cwd=cwd,
+            run_cmd, shell=True, cwd=cwd, env=env,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
             text=True, bufsize=1, preexec_fn=os.setsid,
         )
@@ -222,7 +247,7 @@ class AsyncProcessManager:
             cls._instance.is_running = False
         return cls._instance
 
-    def start_process(self, command: str, cwd: str):
+    def start_process(self, command: str, cwd: str, sandbox: bool = False):
         if self.is_running:
             self.terminate()
             
@@ -234,14 +259,13 @@ class AsyncProcessManager:
         def run_thread():
             try:
                 import os
-                from core.settings import load_settings
-                settings = load_settings()
-                run_cmd = wrap_for_sandbox(command, cwd, settings)
-                
+                run_cmd, env = prepare_command(command, cwd, sandbox)
+
                 self.process = subprocess.Popen(
                     run_cmd,
                     shell=True,
                     cwd=cwd,
+                    env=env,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     stdin=subprocess.PIPE,
@@ -332,6 +356,7 @@ class TerminalTool(BaseTool):
                 "command": {"type": "string", "description": "Shell command to run."},
                 "timeout": {"type": "integer", "description": "Seconds to wait for it to finish (default 30, max 600)."},
                 "run_in_background": {"type": "boolean", "description": "Start it and return immediately (dev servers, watchers); read output later with bash_output."},
+                "dangerously_disable_sandbox": {"type": "boolean", "description": "Run outside the sandbox (writes anywhere, any network). The user must approve each time. Only after the command failed because of the sandbox."},
             },
             "required": ["command"]
         }
@@ -341,18 +366,24 @@ class TerminalTool(BaseTool):
         if not command:
             return "Error: 'command' argument is required."
 
-        error = check_command(command)
+        from core.sandbox import proxy, sandbox_active
+        from core.settings import load_settings
+        available = sandbox_active(load_settings())
+        leave = available and bool(args.get("dangerously_disable_sandbox"))
+        sandboxed = available and not leave
+
+        error = check_command(command, sandboxed=sandboxed, leave_sandbox=leave)
         if error:
             return error
 
         active_cwd = str(get_current_workspace())
         if args.get("run_in_background"):
-            shell_id = background_shells.start(command, active_cwd)
+            shell_id = background_shells.start(command, active_cwd, sandbox=sandboxed)
             return (f"Started in background as shell '{shell_id}'. Use bash_output with shell_id "
                     f"'{shell_id}' to read its output, and kill_shell to stop it.")
 
-        # Start process asynchronously
-        async_process_manager.start_process(command, active_cwd)
+        blocked_before = proxy.blocked_total
+        async_process_manager.start_process(command, active_cwd, sandbox=sandboxed)
 
         # For Agent reasoning loop context: wait for execution to finish.
         try:
@@ -364,6 +395,9 @@ class TerminalTool(BaseTool):
             time.sleep(0.1)
 
         output = "".join(async_process_manager.history)
+        if sandboxed:
+            from core.sandbox import explain_block
+            output += explain_block(output, blocked_before)
         if async_process_manager.is_running:
             output += (f"\n[still running after {timeout}s -- it keeps running; for long commands pass a larger "
                        f"'timeout' or use run_in_background]")

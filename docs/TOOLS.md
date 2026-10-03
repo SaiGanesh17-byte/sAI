@@ -46,8 +46,30 @@ For every action (`agents/loop.py::execute_with_approval` → `Orchestrator.exec
 
 `web_fetch` refuses hosts that resolve to private, loopback, link-local or reserved
 addresses (re-checked on every redirect), unless `web_fetch_allow_private` is on.
-`docker_sandbox: true` runs shell commands inside a container -- the only real isolation;
-the checks above are guard rails, not a sandbox.
+The checks above read command *text*; they are guard rails, not a sandbox.
+
+## OS sandbox
+
+On macOS, `execute_command`, background shells and `run_python_script` run under the
+kernel's sandbox (Seatbelt, `core/sandbox.py`) -- the boundary the text checks can't be:
+
+| | Allowed | Blocked |
+|---|---|---|
+| Write | the workspace, temp dirs, package caches, `sandbox_allow_write` | everything else |
+| Read | everything outside your home folder; in it, the workspace and toolchain dirs (`.nvm`, `.pyenv`, `.m2`, ...) and `sandbox_allow_read` | `~/.ssh`, `~/.aws`, `~/Documents`, keychains, `.netrc`/`.npmrc`, `~/.claude`, sAI's own `.sai/` |
+| Run | anything | `/usr/bin/security` (it can print keychain passwords) |
+| Network | `sandbox_allowed_domains` (registries, GitHub) via a local proxy; localhost | every other host, unix sockets (docker, ssh-agent) |
+
+API keys in sAI's environment are removed before a command starts. Because spawned
+programs are confined too, patterns that only matter for escaping the workspace
+(`subprocess`, `os.system`, `child_process`, ...) no longer ask; deletes, `git push`,
+`sudo` and pipe-to-shell still do -- the sandbox doesn't protect the workspace itself.
+
+When the sandbox stops a command, its output says so, and the agent may retry with
+`dangerously_disable_sandbox: true`, which asks the user every time (no "always").
+`/sandbox` shows the status; `/sandbox off|on`, `/sandbox allow <domain>`. Linux
+(bubblewrap) isn't supported yet: there commands run under the text checks alone, or
+in Docker with `docker_sandbox: true`.
 
 ## Adding a tool
 

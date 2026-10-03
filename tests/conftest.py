@@ -87,3 +87,11 @@ def _no_real_mcp_servers(monkeypatch):
     (tests/test_mcp.py builds its own MCPManager against a fake server.)"""
     from core.mcp import mcp_manager
     monkeypatch.setattr(mcp_manager, "ensure_for_patterns", lambda patterns, config=None: [])
+
+
+@pytest.fixture(autouse=True)
+def _no_os_sandbox(monkeypatch):
+    """Commands in tests run unsandboxed, the same on macOS and Linux CI.
+    tests/test_sandbox.py turns the real sandbox back on where it's supported."""
+    import core.sandbox as sandbox
+    monkeypatch.setattr(sandbox, "sandbox_supported", lambda: False)

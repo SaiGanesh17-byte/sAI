@@ -113,3 +113,27 @@ def test_jev_answers_arithmetic_without_an_llm_call(fake_llm_runtime):
     decision = JevRouter().decide("what is 17 * 23 * 41?", ["Researcher"])
     assert decision.route == "direct_answer" and "16031" in decision.answer
     assert fake_llm_runtime.calls == []
+
+
+def test_jev_sees_what_each_agent_can_do(monkeypatch):
+    from core.kernel import kernel
+    from agents.runtime import AgentRuntime
+    from jev.decision import JevRouter, agent_capabilities
+    runner = AgentRuntime("Runner", "runs things", "", "m", tools=["read_file", "execute_command"])
+    reader = AgentRuntime("Reader", "reads things", "", "m", tools=["read_file", "web_search", "mcp__context7__*"])
+    monkeypatch.setattr(kernel, "_agents", {"Runner": runner, "Reader": reader})
+    assert "runs commands" in agent_capabilities("Runner") and "can NOT edit files" in agent_capabilities("Runner")
+    assert "can NOT run commands" in agent_capabilities("Reader") and "uses context7 tools" in agent_capabilities("Reader")
+    prompt = JevRouter()._build_prompt("run it", ["Runner", "Reader"], None, {"Runner": "runs things", "Reader": "reads things"})
+    assert "- Reader: reads things [reads code, searches the web, uses context7 tools; can NOT run commands, edit files]" in prompt
+
+
+def test_direct_answer_about_a_workspace_file_goes_to_an_agent(tmp_workspace, fake_llm_runtime):
+    from jev.decision import JevRouter
+    (tmp_workspace / "error.png").write_bytes(b"png")
+    fake_llm_runtime.response = '{"route": "direct_answer", "answer": "I don\'t have access to that image.", "reasoning": "x", "confidence": 0.9}'
+    decision = JevRouter().decide("what does error.png say?", ["Researcher", "Coder"])
+    assert decision.route == "single_agent" and decision.agent == "Researcher"
+    # ...but a file name that isn't in the workspace is just conversation.
+    decision = JevRouter().decide("what is a .png file?", ["Researcher", "Coder"])
+    assert decision.route == "direct_answer"

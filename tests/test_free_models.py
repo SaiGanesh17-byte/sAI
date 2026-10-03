@@ -2,7 +2,7 @@ import pytest
 
 from core.events import event_bus, EventType
 from core.kernel import kernel
-from llm.runtime import LLMRuntime, is_free_model, model_candidates
+from llm.runtime import _MODEL_COOLDOWN, LLMRuntime, is_free_model, model_candidates
 
 
 def test_is_free_model():
@@ -40,8 +40,10 @@ def runtime_with(monkeypatch):
         monkeypatch.setattr("llm.router.ModelRouter.route", staticmethod(lambda kind: ("flaky", "unused")))
         kernel.register_provider("flaky", provider)
         return LLMRuntime()
+    _MODEL_COOLDOWN.clear()
     yield setup
     kernel._providers.pop("flaky", None)
+    _MODEL_COOLDOWN.clear()
 
 
 def test_rate_limited_free_model_falls_back_once(runtime_with):
@@ -176,3 +178,65 @@ def test_callers_temperature_is_used_unless_overridden(runtime_with):
     runtime_with(Recorder(set()), temperature=0.2).query("p", task_kind="Jev", model="paid", temperature=0.0)
     runtime_with(Recorder(set()), temperature_override=0.7).query("p", task_kind="Jev", model="paid", temperature=0.0)
     assert seen == [0.0, 0.7]  # the legacy 'temperature' key no longer overrides
+
+
+def test_failed_free_model_cools_down(runtime_with):
+    provider = FlakyProvider({"a:free"})
+    rt = runtime_with(provider, free_model_chain=["a:free", "b:free"], free_model_retries=1)
+    assert rt.query("p", task_kind="Coder", model="a:free") == '{"ok": "b:free"}'
+    assert rt.query("p", task_kind="Coder", model="a:free") == '{"ok": "b:free"}'
+    assert provider.calls == ["a:free", "b:free", "b:free"]  # a:free skipped on the second call
+
+
+def test_all_cooling_down_still_tries_one(monkeypatch):
+    import time
+    _MODEL_COOLDOWN.update({"a:free": time.time() + 60, "b:free": time.time() + 60})
+    try:
+        s = {"free_fallback_model": "paid", "free_model_chain": ["a:free", "b:free"], "free_model_retries": 2}
+        assert model_candidates("a:free", s) == ["a:free", "paid"]
+    finally:
+        _MODEL_COOLDOWN.clear()
+
+
+def test_provider_prefixed_models():
+    from llm.runtime import is_openrouter_free, split_model
+    assert split_model("groq:openai/gpt-oss-120b", "openrouter") == ("groq", "openai/gpt-oss-120b")
+    assert split_model("qwen/qwen3.8-27b:free", "openrouter") == ("openrouter", "qwen/qwen3.8-27b:free")
+    assert split_model("openai/gpt-4o-mini", "openrouter") == ("openrouter", "openai/gpt-4o-mini")
+    assert is_free_model("groq:openai/gpt-oss-120b") and is_free_model("nvidia:nvidia/nemotron-3-super-120b-a12b")
+    assert not is_openrouter_free("groq:openai/gpt-oss-120b")
+    assert not is_free_model("openai:gpt-4o-mini")
+
+
+def test_openrouter_cap_keeps_other_free_providers(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "k")
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setattr("llm.runtime.free_models_paused", lambda: True)
+    s = {"free_fallback_model": "paid", "free_model_retries": 3,
+         "free_model_chain": ["x:free", "groq:a", "gemini:b"]}
+    assert model_candidates("x:free", s) == ["groq:a", "gemini:b", "paid"]
+    assert model_candidates("y:free", {**s, "free_model_chain": []}) == ["paid"]
+
+
+def test_chain_crosses_providers(runtime_with, monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "test")
+    flaky = FlakyProvider({"x:free"})
+    other = FlakyProvider(set())
+    real_groq = kernel._providers.get("groq")
+    kernel.register_provider("groq", other)
+    try:
+        rt = runtime_with(flaky, free_model_chain=["x:free", "groq:openai/gpt-oss-120b"], free_model_retries=1)
+        assert rt.query("p", task_kind="Coder", model="x:free") == '{"ok": "openai/gpt-oss-120b"}'
+    finally:
+        if real_groq is not None:
+            kernel._providers["groq"] = real_groq
+        else:
+            kernel._providers.pop("groq", None)
+    assert flaky.calls == ["x:free"] and other.calls == ["openai/gpt-oss-120b"]
+
+
+def test_provider_without_a_key_is_skipped(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "k")
+    s = {"free_fallback_model": "paid", "free_model_retries": 3, "free_model_chain": ["gemini:b", "groq:a"]}
+    assert model_candidates("gemini:b", s) == ["groq:a", "paid"]

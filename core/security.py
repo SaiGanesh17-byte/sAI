@@ -238,14 +238,23 @@ RISKY_PATTERNS = [
 ]
 _RISKY_REGEXES = [(label, re.compile(rx)) for label, rx in RISKY_PATTERNS]
 
-def find_risky_pattern(text: str) -> Optional[str]:
+# Patterns that are only dangerous as a way *out* of the workspace (spawning other
+# programs). Under the OS sandbox those programs are confined too, so they no longer
+# need approval -- this is most false prompts (any test script that imports
+# subprocess). Deletes, git push, sudo, pipe-to-shell etc. still ask: the sandbox
+# doesn't protect the workspace itself, and allowed domains include GitHub.
+SANDBOX_SAFE_PATTERNS = {"os.system", "os.popen", "subprocess", "import subprocess", "from os import",
+                         "__import__", "child_process"}
+
+
+def find_risky_pattern(text: str, ignore=()) -> Optional[str]:
     """
     Returns the label of the first RISKY_PATTERNS entry found in `text`
-    (case-insensitive), or None if nothing matched.
+    (case-insensitive) that isn't in `ignore`, or None if nothing matched.
     """
     lowered = (text or "").lower()
     for label, regex in _RISKY_REGEXES:
-        if regex.search(lowered):
+        if label not in ignore and regex.search(lowered):
             return label
     return None
 

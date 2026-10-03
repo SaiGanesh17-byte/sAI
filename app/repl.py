@@ -37,6 +37,7 @@ from execution.permissions import PermissionRequestRequired
 from tools.terminal import TerminalTool
 from jev.decision import JevRouter
 from llm.tracker import format_usd, spent_today, token_tracker
+from llm.attribution import ModelLog
 from llm.runtime import BudgetExceeded
 from ui.banner import render_banner, TEAL, VIOLET, DIM
 from agents.loop import LoopResult, run_agent_loop
@@ -46,7 +47,8 @@ from ui.activity import (
     ActivityIndicator, ActivityPrinter, TOOL_LABELS, format_tokens, partial_json_string, tool_call_label, tool_result_summary,
 )
 
-ROUTE_LABELS = {"direct_answer": "direct", "single_agent": "1 agent", "full_orchestrator": "full team"}
+ROUTE_LABELS = {"direct_answer": "direct", "single_agent": "1 agent", "full_orchestrator": "full team",
+                "council": "council"}
 
 # Deliberately tight: requires BOTH a known package-manager binary AND a
 # subcommand verb, so it only matches unambiguous shell syntax (e.g.
@@ -72,6 +74,8 @@ SLASH_COMMANDS = {
     "/mcp": "connected MCP servers and tools",
     "/cost": "session cost and token usage",
     "/budget": "set a daily spending cap",
+    "/council": "ask several free models, then merge their answers",
+    "/sandbox": "command sandbox status and settings",
     "/tokens": "session token usage",
 }
 
@@ -103,6 +107,7 @@ class SaiRepl:
         self._turn_marks: list = []
         self._delegate_depth = 0  # >0 while a delegated helper agent is working
         self.esc = EscWatcher()
+        self.models = ModelLog()
         self._register_events()
 
     # ------------------------------------------------------------------
@@ -139,6 +144,8 @@ class SaiRepl:
         is_jev = agent == "Jev"
         if is_jev:
             text = partial_json_string(self._stream_buffer, "answer")
+        elif agent == "Council":
+            text = self._stream_buffer  # the judge writes plain Markdown, not JSON
         else:
             # Show the full reply once it starts streaming; until then the short status line.
             text = partial_json_string(self._stream_buffer, "response") or partial_json_string(self._stream_buffer, "summary")
@@ -236,6 +243,9 @@ class SaiRepl:
         if preq.kind == "edit":
             return "allow all edits for the rest of this session"
         if preq.kind == "command":
+            from tools.terminal import LEAVE_SANDBOX_REASON
+            if LEAVE_SANDBOX_REASON in (preq.reason or ""):
+                return None  # leaving the sandbox is approved one run at a time
             prefix = command_allow_prefix(preq.path)
             return f"always allow `{prefix} …` this session" if prefix else None
         if preq.kind == "mcp":
@@ -527,7 +537,7 @@ class SaiRepl:
     # ------------------------------------------------------------------
     def _token_snapshot(self):
         return (token_tracker.input_tokens, token_tracker.output_tokens, token_tracker.calls_count,
-                token_tracker.cost_usd)
+                token_tracker.cost_usd, self.models.mark())
 
     def _print_token_footer(self, before, route: str):
         din = token_tracker.input_tokens - before[0]
@@ -540,6 +550,8 @@ class SaiRepl:
             f"{dcalls} call{'s' if dcalls != 1 else ''} · {format_usd(dcost)} · "
             f"session {format_usd(token_tracker.cost_usd)}[/{DIM}]"
         )
+        used = self.models.since(before[4]) if len(before) > 4 else []
+        self.console.print(f"[{DIM}]  models: {escape(ModelLog.summarize(used)) if used else 'none (answered locally)'}[/{DIM}]")
 
     def _recent_turn_summaries(self):
         turns = []
@@ -564,6 +576,8 @@ class SaiRepl:
   [{TEAL}]/agents[/{TEAL}]   list all specialist agents and their roles
   [{TEAL}]/cost[/{TEAL}]     session cost in $, today's spend, tokens (alias: /tokens)
   [{TEAL}]/budget[/{TEAL}]   daily spending cap: /budget 2.50 · /budget off
+  [{TEAL}]/sandbox[/{TEAL}]  command sandbox: status · /sandbox on|off · /sandbox allow <domain>
+  [{TEAL}]/council[/{TEAL}]  /council <question> -- several models answer, a judge merges them (1 request per model)
   [{TEAL}]/clear[/{TEAL}]    start a fresh session (the old one stays saved)
   [{TEAL}]/undo[/{TEAL}]     roll back the file edits from the last turn (repeat to go further back)
   [{TEAL}]/compact[/{TEAL}]  summarize the conversation so far to free up context · /compact <what to focus on>
@@ -592,6 +606,14 @@ class SaiRepl:
 
         if cmd == "/budget":
             self._set_budget(parts[1] if len(parts) > 1 else "")
+            return
+
+        if cmd == "/sandbox":
+            self._run_sandbox_command(parts[1] if len(parts) > 1 else "")
+            return
+
+        if cmd == "/council":
+            self._run_council(parts[1] if len(parts) > 1 else "")
             return
 
         if cmd in ("/tokens", "/cost"):
@@ -653,6 +675,90 @@ class SaiRepl:
             return
 
         self.console.print(f"[{DIM}]Unknown command '{cmd}'. Try /help.[/{DIM}]")
+
+    def _run_sandbox_command(self, arg: str):
+        from core.sandbox import DEFAULT_ALLOWED_DOMAINS, proxy, sandbox_active, sandbox_mode
+
+        settings = load_settings()
+        words = arg.split()
+        if words and words[0] in ("on", "off", "auto"):
+            settings["sandbox"] = words[0]
+            save_settings(settings)
+        elif len(words) == 2 and words[0] in ("allow", "disallow"):
+            domains = list(settings.get("sandbox_allowed_domains") or DEFAULT_ALLOWED_DOMAINS)
+            domain = words[1].lower()
+            if words[0] == "allow" and domain not in domains:
+                domains.append(domain)
+            elif words[0] == "disallow" and domain in domains:
+                domains.remove(domain)
+            settings["sandbox_allowed_domains"] = domains
+            save_settings(settings)
+        elif words:
+            self.console.print(f"[{DIM}]Usage: /sandbox · /sandbox on|off · /sandbox allow|disallow <domain>[/{DIM}]")
+            return
+
+        active = sandbox_active(settings)
+        if active:
+            state = f"[bold {TEAL}]on[/bold {TEAL}]"
+        elif sandbox_mode(settings) == "off":
+            state = "[yellow]off[/yellow] -- commands are checked by pattern only"
+        elif settings.get("docker_sandbox"):
+            state = "off -- docker_sandbox is the boundary instead"
+        else:
+            state = "[yellow]unavailable on this OS[/yellow] -- pattern checks only"
+        domains = settings.get("sandbox_allowed_domains") or DEFAULT_ALLOWED_DOMAINS
+        self.console.print(f"\n[bold {VIOLET}]Sandbox[/bold {VIOLET}] {state}")
+        if active:
+            self.console.print(f"  writes   workspace, temp dirs, package caches"
+                               f"{' + ' + ', '.join(settings.get('sandbox_allow_write')) if settings.get('sandbox_allow_write') else ''}")
+            self.console.print("  reads    everything outside your home folder; inside it only the workspace and toolchains")
+            self.console.print(f"  network  {len(domains)} allowed domains: {escape(', '.join(domains[:6]))}"
+                               f"{', ...' if len(domains) > 6 else ''}")
+            if proxy.blocked:
+                self.console.print(f"  [{DIM}]recently blocked: {escape(', '.join(dict.fromkeys(proxy.blocked[-5:])))}"
+                                   f" -- /sandbox allow <domain> to permit one[/{DIM}]")
+
+    def _run_council(self, question: str):
+        from llm.attribution import short_model
+        from llm.council import CouncilError, run_council
+
+        question = question.strip()
+        if not question:
+            self.console.print(f"[{DIM}]Usage: /council <question> -- each model in council_models answers, then "
+                               f"council_judge merges them. Costs one request per model.[/{DIM}]")
+            return
+        settings = load_settings()
+        before = self._token_snapshot()
+        context = self._recent_turn_summaries()
+        self.printer.tool_call(f"Council({len(settings.get('council_models') or [])} models)")
+        self.activity.show("Council deliberating")
+
+        def on_member(member):
+            with self.activity.paused():
+                if member.answer:
+                    self.printer.tool_result(f"{short_model(member.model)} answered in {member.seconds:.1f}s", True)
+                else:
+                    self.printer.tool_result(f"{short_model(member.model)} failed: {member.error[:90]}", False)
+
+        try:
+            result = run_council(question, settings, context, on_member=on_member)
+        except (CouncilError, BudgetExceeded) as e:
+            self.activity.hide()
+            self.printer.note(f"[red]{escape(str(e))}[/red]")
+            return
+        except Exception as e:
+            self.activity.hide()
+            self.printer.note(f"[red]Council failed: {escape(str(e)[:300])}[/red]")
+            return
+        self.activity.clear_preview()
+        self.activity.hide()
+        self.printer.agent_message("Council", result.answer)
+        self.task.context.conversation.add(Message(sender="User", receiver="Council", type=MessageType.SUMMARY,
+                                                   payload={"content": question}))
+        self.task.context.conversation.add(Message(sender="Council", receiver="User", type=MessageType.SUMMARY,
+                                                   payload={"summary": result.answer, "content": result.answer}))
+        self._print_token_footer(before, "council")
+        self._save_session()
 
     def _undo_last_turn(self):
         """Restore the files the most recent turn (with edits) changed."""

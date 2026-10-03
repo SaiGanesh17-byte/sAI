@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Optional
 from core.kernel import kernel
 from core.security import get_current_workspace
-from llm.providers.nvidia import NvidiaProvider
+from llm.providers.compatible import FREE_TIER_PROVIDERS, OpenAICompatibleProvider
 from llm.providers.openai import OpenAIProvider
 from llm.providers.ollama import OllamaProvider
 from llm.providers.openrouter import OpenRouterProvider
@@ -42,7 +42,10 @@ class Orchestrator:
 
     def _init_kernel(self) -> None:
         try:
-            kernel.register_provider("nvidia", NvidiaProvider())
+            # Groq, Gemini and NVIDIA: free tiers with their own daily limits, used in
+            # free_model_chain / council_models as "groq:<model>" etc.
+            for name, (base_url, key_env, _) in FREE_TIER_PROVIDERS.items():
+                kernel.register_provider(name, OpenAICompatibleProvider(base_url, key_env))
             kernel.register_provider("openai", OpenAIProvider())
             kernel.register_provider("ollama", OllamaProvider())
             kernel.register_provider("openrouter", OpenRouterProvider())

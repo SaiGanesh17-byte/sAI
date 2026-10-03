@@ -26,6 +26,7 @@ from core.task import Task
 from execution.permissions import PermissionRequestRequired
 from jev.decision import JevRouter
 from llm.tracker import token_tracker
+from llm.attribution import ModelLog
 from ui.activity import tool_call_label
 from ui.input import expand_file_mentions, is_image
 
@@ -94,6 +95,7 @@ def run_headless(prompt: str, accept_edits: bool = False, output_format: str = "
     event_bus.subscribe(EventType.LLM_FALLBACK, lambda e: progress(f"  (free model busy: {e.data.get('from')} -> {e.data.get('to')})"))
 
     tokens_before = (token_tracker.input_tokens, token_tracker.output_tokens, token_tracker.cost_usd)
+    model_log = ModelLog()
     agents = orchestrator.agents
     decision = JevRouter().decide(prompt, [a.name for a in agents], [], agent_roles={a.name: a.role for a in agents})
     start_index = len(task.context.conversation.all())
@@ -147,9 +149,12 @@ def run_headless(prompt: str, accept_edits: bool = False, output_format: str = "
         print(json.dumps({
             "result": result, "route": decision.route, "agent": agent_name,
             "stop_reason": stop_reason, "permission_denials": denied, "usage": usage, "is_error": False,
+            "models": [{"agent": a, "model": m} for a, m in model_log.calls],
         }))
     else:
         print(result)
+        # stderr (via progress), so `sai -p ... > out.md` keeps only the answer.
+        progress(f"\n[models: {ModelLog.summarize(model_log.calls) or 'none (answered locally)'}]")
         if denied:
             progress("\nSome actions needed permission and were declined. Re-run with --accept-edits, "
                      "or allow commands with `/permissions allow <prefix>` / allow_commands in settings.")

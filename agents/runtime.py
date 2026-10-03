@@ -136,6 +136,8 @@ class AgentRuntime:
         return {n: d for n, d in tool_reg.list_tools().items() if self.allows_tool(n)} if tool_reg else {}
 
     def execute_turn(self, context: TaskContext) -> Message:
+        from core.sandbox import sandbox_note
+        from core.settings import load_settings
         repository = kernel.get_service("repository")
         memory = context.memory
         conversation = context.conversation
@@ -190,6 +192,7 @@ AVAILABLE TOOLS:
 
 {environment_note()}
 {repository_note()}
+{sandbox_note(load_settings())}
 
 DOING THE WORK:
 - If the user asks you to fix, change, add, write or create something, DO it with your tools

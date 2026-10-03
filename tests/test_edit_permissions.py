@@ -140,7 +140,7 @@ def test_rules_never_match_chained_commands(command):
 def test_allowed_risky_command_runs_without_prompt(tmp_workspace, monkeypatch):
     from tools import terminal
     started = []
-    monkeypatch.setattr(terminal.async_process_manager, "start_process", lambda cmd, cwd: started.append(cmd))
+    monkeypatch.setattr(terminal.async_process_manager, "start_process", lambda cmd, cwd, **kw: started.append(cmd))
     monkeypatch.setattr(terminal.async_process_manager, "is_running", False)
     security.allow_command_prefix_for_session("git push")
     TerminalTool().execute({"command": "git push origin main"})  # would otherwise raise PermissionRequestRequired

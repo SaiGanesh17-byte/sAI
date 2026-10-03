@@ -282,3 +282,13 @@
           return a + b
   expect:
     file_unchanged: [keep.txt, calc.py]
+
+- id: support-run-a-command
+  persona: support
+  # Jev once sent this to the Researcher (no execute_command), which answered with a web search.
+  prompt: "Run `python3 checksum.py` and tell me exactly what number it prints."
+  files:
+    checksum.py: |
+      print(sum(i * i for i in range(1234)) % 99991)
+  expect:
+    contains_all: ["55433"]

@@ -57,6 +57,9 @@ Routing rules:
   best (e.g. a migration plan -> Architect, an estimate or user stories -> Writer, a
   debugging how-to -> Debugger), even if the topic is broad. Answering a question never
   needs the whole team.
+  Each agent's [brackets] say what it can actually do. A request to run, execute, install,
+  build or test something needs an agent that "runs commands"; one to change files needs
+  one that "edits files" -- never route those to an agent that can NOT do it.
 - "full_orchestrator": only for real multi-step WORK on this workspace that needs
   several agents in sequence (e.g. design + implement + test a new feature). When you
   are unsure between "single_agent" and this route for a plain question, choose
@@ -115,6 +118,51 @@ class JevDecision:
     reasoning: str = ""
     confidence: float = 0.0
     fallback: bool = False
+
+
+# Shown next to each agent's role. Jev used to route on role text alone, and "run this
+# command and tell me the output" went to the Researcher ("finds out what is true"),
+# which has no execute_command -- it answered with a web search about the command.
+_CAPABILITIES = [("execute_command", "runs commands"), ("edit_file", "edits files"),
+                 ("web_search", "searches the web")]
+
+
+def agent_capabilities(name: str) -> str:
+    try:
+        from core.kernel import kernel
+        agent = kernel.list_agents().get(name)
+    except Exception:
+        agent = None
+    if agent is None or not hasattr(agent, "allows_tool"):
+        return ""
+    can = ["reads code"] + [label for tool, label in _CAPABILITIES if agent.allows_tool(tool)]
+    servers = sorted({p.split("__")[1] for p in getattr(agent, "tools", []) if p.startswith("mcp__") and "__" in p[5:]})
+    can += [f"uses {server} tools" for server in servers]
+    cannot = [label.replace("runs", "run").replace("edits", "edit").replace("searches", "search")
+              for tool, label in _CAPABILITIES if not agent.allows_tool(tool)]
+    return f" [{', '.join(can)}" + (f"; can NOT {', '.join(cannot)}" if cannot else "") + "]"
+
+
+_FILE_TOKEN = re.compile(r"[\w./-]+\.[A-Za-z0-9]{1,6}\b")
+
+
+def mentioned_workspace_file(text: str) -> Optional[str]:
+    """The first token in `text` naming an existing file or folder in the workspace."""
+    try:
+        from core.security import get_current_workspace
+        workspace = get_current_workspace().resolve()
+    except Exception:
+        return None
+    for token in _FILE_TOKEN.findall(text or ""):
+        token = token.strip("./") if token.startswith("./") else token.rstrip(".")
+        if not token or token.startswith(("http", "/")) or ".." in token:
+            continue
+        try:
+            if (workspace / token).exists():
+                return token
+        except OSError:
+            continue
+    return None
 
 
 class JevRouter:
@@ -178,6 +226,13 @@ class JevRouter:
             answer = parsed.get("answer")
             if not answer or not str(answer).strip():
                 return self._fallback("Jev chose direct_answer but returned no answer text.")
+            mentioned = mentioned_workspace_file(goal)
+            reader = next((a for a in ("Researcher", "Debugger", "Coder") if a in available_agents), None)
+            if mentioned and reader:
+                # Jev can't see files; answering "what does error.png say?" itself gave
+                # "I don't have access to that image" while an agent could just read it.
+                return JevDecision(route="single_agent", agent=reader, confidence=confidence,
+                                   reasoning=f"Mentions {mentioned}, which only an agent can read.")
             return JevDecision(route="direct_answer", answer=str(answer), reasoning=reasoning, confidence=confidence)
 
         return JevDecision(route="full_orchestrator", reasoning=reasoning, confidence=confidence)
@@ -190,7 +245,8 @@ class JevRouter:
         agent_roles: Optional[Dict[str, str]] = None,
     ) -> str:
         if agent_roles:
-            agents_list = "\n".join(f"- {name}: {agent_roles.get(name, '')}" for name in available_agents)
+            agents_list = "\n".join(f"- {name}: {agent_roles.get(name, '')}{agent_capabilities(name)}"
+                                    for name in available_agents)
         else:
             agents_list = ", ".join(available_agents) if available_agents else "(none registered)"
         history = ""

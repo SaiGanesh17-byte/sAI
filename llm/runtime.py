@@ -43,9 +43,39 @@ def check_budget(settings: dict) -> None:
         )
 
 
-def is_free_model(model: str) -> bool:
+# "groq:openai/gpt-oss-120b" -> provider "groq". Each of these is a free tier with its
+# own daily limit, separate from OpenRouter's 50 free requests.
+PROVIDER_PREFIXES = ("groq", "gemini", "nvidia", "openrouter", "openai", "ollama")
+FREE_TIER_PREFIXES = ("groq", "gemini", "nvidia")
+
+
+def split_model(model: str, default_provider: str):
+    """'groq:openai/gpt-oss-120b' -> ('groq', 'openai/gpt-oss-120b'); a plain id keeps the default provider."""
+    head, sep, rest = (model or "").partition(":")
+    if sep and rest and head in PROVIDER_PREFIXES:
+        return head, rest
+    return default_provider, model
+
+
+def is_openrouter_free(model: str) -> bool:
     """OpenRouter's free models: '<id>:free', or the 'openrouter/free' auto-router."""
-    return bool(model) and (model.endswith(":free") or model == "openrouter/free")
+    return bool(model) and split_model(model, "")[0] in ("", "openrouter") and (
+        model.endswith(":free") or model == "openrouter/free")
+
+
+def provider_configured(model: str) -> bool:
+    """False for a free-tier provider (groq:, gemini:, nvidia:) whose API key isn't set."""
+    import os
+    provider = split_model(model, "")[0]
+    if provider not in FREE_TIER_PREFIXES:
+        return True
+    from llm.providers.compatible import FREE_TIER_PROVIDERS
+    return bool(os.getenv(FREE_TIER_PROVIDERS[provider][1]))
+
+
+def is_free_model(model: str) -> bool:
+    """An OpenRouter free model, or any model on a free-tier provider (groq:, gemini:, nvidia:)."""
+    return is_openrouter_free(model) or split_model(model, "")[0] in FREE_TIER_PREFIXES
 
 
 def looks_like_json_object(text: str) -> bool:
@@ -70,8 +100,22 @@ _FREE_MODELS_PAUSED_UNTIL = {"t": 0.0}
 FREE_PAUSE_FILE = Path(__file__).resolve().parent.parent / ".sai" / "free_models_paused_until"
 
 
-def note_free_model_failure(model: str, error: Exception) -> None:
+# A free model that just rate-limited, errored or stalled usually does it again on the next
+# call; skip it for a while so a turn's later steps don't each pay the same failed round-trip.
+_MODEL_COOLDOWN: Dict[str, float] = {}
+
+
+def cooling_down(model: str) -> bool:
+    import time
+    return time.time() < _MODEL_COOLDOWN.get(model, 0.0)
+
+
+def note_free_model_failure(model: str, error: Exception, cooldown: float = 120.0) -> None:
     if not is_free_model(model):
+        return
+    import time
+    _MODEL_COOLDOWN[model] = time.time() + cooldown
+    if not is_openrouter_free(model):
         return
     text = str(error)
     if "free-models-per-day" not in text and "free_tier_daily" not in text:
@@ -110,9 +154,18 @@ def model_candidates(model: str, settings: dict) -> List[str]:
     if not is_free_model(model):
         return [model]
     fallback = settings.get("free_fallback_model") or settings.get("reasoner_model") or ""
-    if not settings.get("use_free_models", True) or (free_models_paused() and fallback):
+    if not settings.get("use_free_models", True):
         return [fallback or model]
     chain = [model] + [m for m in (settings.get("free_model_chain") or []) if m != model]
+    chain = [m for m in chain if provider_configured(m)]
+    if not chain:
+        return [fallback or model]
+    if free_models_paused():
+        # OpenRouter's daily free cap is spent; other providers' free tiers still work.
+        chain = [m for m in chain if not is_openrouter_free(m)]
+        if not chain:
+            return [fallback or model]
+    chain = [m for m in chain if not cooling_down(m)] or chain[:1]  # all cooling down: still try one
     chain = chain[:1 + max(0, int(settings.get("free_model_retries", 1)))]
     if fallback and fallback not in chain:
         chain.append(fallback)
@@ -222,8 +275,6 @@ class LLMRuntime:
             {"role": "user", "content": image_content(compressed_prompt, images) if images else compressed_prompt}
         ]
 
-        provider = kernel.get_provider(provider_name)
-
         from core.security import CURRENT_ACTIVITY
         old_status = CURRENT_ACTIVITY.get("status", "thinking")
         CURRENT_ACTIVITY.update({
@@ -237,7 +288,7 @@ class LLMRuntime:
         try:
             candidates = model_candidates(model_name, settings)
             for attempt, candidate in enumerate(candidates):
-                if attempt < len(candidates) - 1 and is_free_model(candidate) and free_models_paused():
+                if attempt < len(candidates) - 1 and is_openrouter_free(candidate) and free_models_paused():
                     continue  # the daily free cap was hit earlier in this same chain
                 if not is_free_model(candidate):
                     check_budget(settings)  # free models stay usable after the cap
@@ -265,7 +316,9 @@ class LLMRuntime:
                     # streamed chunks, so a slow-but-progressing answer isn't cut off.)
                     call_kwargs.setdefault("timeout", float(settings.get("free_model_timeout", 30)))
                 try:
-                    response_content = self._complete(provider, messages, candidate, temperature, task_kind,
+                    candidate_provider, candidate_model = split_model(candidate, provider_name)
+                    response_content = self._complete(kernel.get_provider(candidate_provider), messages,
+                                                      candidate_model, temperature, task_kind,
                                                       settings.get("stream_responses", True), **call_kwargs)
                     if not ResponseValidator.validate(response_content):
                         raise ValueError("Response failed structure validation checks.")
@@ -278,14 +331,15 @@ class LLMRuntime:
                     model_name = candidate
                     break
                 except Exception as e:
-                    note_free_model_failure(candidate, e)
+                    note_free_model_failure(candidate, e, float(settings.get("free_model_cooldown", 120)))
                     if attempt == len(candidates) - 1:
                         raise
                     logger.info(f"{candidate} failed ({str(e)[:120]}); falling back to {candidates[attempt + 1]}")
 
             event_bus.publish(
                 EventType.LLM_RESPONSE,
-                {"model": model_name, "provider": provider_name, "response_len": len(response_content)},
+                {"model": model_name, "provider": provider_name, "agent": task_kind,
+                 "response_len": len(response_content)},
                 source="LLMRuntime"
             )
             return response_content
@@ -353,7 +407,8 @@ class LLMRuntime:
         )
 
         messages = [{"role": "user", "content": compressed_prompt}]
-        provider = kernel.get_provider(provider_name)
+        tools_provider, tools_model = split_model(model_name, provider_name)
+        provider = kernel.get_provider(tools_provider)
 
         from core.security import CURRENT_ACTIVITY
         old_status = CURRENT_ACTIVITY.get("status", "thinking")
@@ -366,10 +421,11 @@ class LLMRuntime:
         })
 
         try:
-            result = provider.complete_with_tools(messages, model=model_name, tools=tools, temperature=temperature)
+            result = provider.complete_with_tools(messages, model=tools_model, tools=tools, temperature=temperature)
             event_bus.publish(
                 EventType.LLM_RESPONSE,
-                {"model": model_name, "provider": provider_name, "response_len": len(result.get("content") or "")},
+                {"model": model_name, "provider": provider_name, "agent": task_kind,
+                 "response_len": len(result.get("content") or "")},
                 source="LLMRuntime"
             )
             return result

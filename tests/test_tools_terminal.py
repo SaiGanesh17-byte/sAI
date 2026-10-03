@@ -43,7 +43,7 @@ def test_urls_are_not_mistaken_for_paths(tmp_workspace, monkeypatch):
     # Only the sandbox check is under test -- don't actually hit the network.
     from tools import terminal
     started = []
-    monkeypatch.setattr(terminal.async_process_manager, "start_process", lambda cmd, cwd: started.append(cmd))
+    monkeypatch.setattr(terminal.async_process_manager, "start_process", lambda cmd, cwd, **kw: started.append(cmd))
     monkeypatch.setattr(terminal.async_process_manager, "is_running", False)
     TerminalTool().execute({"command": "curl -s https://example.com/some/page"})
     assert started == ["curl -s https://example.com/some/page"]
@@ -53,7 +53,7 @@ def test_running_a_destructive_script_needs_approval_for_its_content(tmp_workspa
     # Regression: with `rm` gated, an agent wrote delete_files.py and ran `python3 delete_files.py`.
     from tools import terminal
     started = []
-    monkeypatch.setattr(terminal.async_process_manager, "start_process", lambda cmd, cwd: started.append(cmd))
+    monkeypatch.setattr(terminal.async_process_manager, "start_process", lambda cmd, cwd, **kw: started.append(cmd))
     monkeypatch.setattr(terminal.async_process_manager, "is_running", False)
     script = tmp_workspace / "delete_files.py"
     script.write_text("import os\nfor f in os.listdir('.'):\n    os.remove(f)\n")
@@ -76,7 +76,7 @@ def test_running_a_destructive_script_needs_approval_for_its_content(tmp_workspa
 def test_harmless_scripts_and_executables_still_run(tmp_workspace, monkeypatch):
     from tools import terminal
     started = []
-    monkeypatch.setattr(terminal.async_process_manager, "start_process", lambda cmd, cwd: started.append(cmd))
+    monkeypatch.setattr(terminal.async_process_manager, "start_process", lambda cmd, cwd, **kw: started.append(cmd))
     monkeypatch.setattr(terminal.async_process_manager, "is_running", False)
     (tmp_workspace / "hello.py").write_text("print('hi')\n")
     (tmp_workspace / "wipe.sh").write_text("rm -rf ./build\n")

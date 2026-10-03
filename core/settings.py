@@ -13,13 +13,30 @@ DEFAULT_SETTINGS = {
     "ollama_url": "http://localhost:11434",
     "coder_model": "qwen/qwen3-coder-plus",
     "reasoner_model": "openai/gpt-4o-mini",
-    "jev_model": "inclusionai/ling-3.0-flash-sante:free",  # routing on every turn -- a free model; empty = reuse reasoner_model
+    # Routing on every turn: Groq's free tier (1000 requests/day, ~0.6s), so it doesn't use OpenRouter's
+    # 50 free requests. Evals 2026-10-04: 25/26 (the miss was a Coder answer, not routing), and steadier
+    # routing than ling-3.0-flash. Without a Groq key it falls back along free_model_chain. Empty = reasoner_model.
+    "jev_model": "groq:openai/gpt-oss-20b",
     "compact_model": "inclusionai/ling-3.0-flash-sante:free",  # summarizing history for /compact
     "use_free_models": True,  # master switch for ':free' models (agents, Jev, compaction)
-    # Tried in order after a free model fails or returns junk (benchmarked 2026-10-01). Avoid the
-    # "openrouter/free" auto-router: it has served a safety classifier for a chat request.
-    "free_model_chain": ["inclusionai/ling-3.0-flash-sante:free", "nvidia/nemotron-3-super-120b-a12b:free", "cohere/north-mini-code:free"],
-    "free_model_retries": 1,  # how many other free models to try before the paid fallback
+    # Tried in order after a free model fails or returns junk. Benchmarked 2026-10-04 with a native
+    # tool call; every entry made a correct edit_file call. "groq:"/"gemini:"/"nvidia:" ids go to
+    # those providers' own free tiers (keys in the keychain: groq_key, gemini_key, nvidia_key), so
+    # they don't use OpenRouter's 50 free requests a day; entries without a key are skipped.
+    # Not here: groq (8k tokens/minute -- too small for agent prompts; fine for Jev/council),
+    # ling-3.0-flash (drops tool arguments), gemini-3.8-flash (same), gemma-4/laguna (errored),
+    # inkling (approved harnesses only), kimi-k3/deepseek/glm on NVIDIA (90s timeouts).
+    # Avoid the "openrouter/free" auto-router: it has served a safety classifier for a chat request.
+    "free_model_chain": ["nvidia:nvidia/nemotron-3-super-120b-a12b", "gemini:gemini-3.5-flash",
+                         "nvidia/nemotron-3-super-120b-a12b:free", "cohere/north-mini-code:free",
+                         "qwen/qwen3.8-27b:free", "nvidia/nemotron-3-ultra-550b-a55b:free"],
+    "free_model_retries": 3,  # how many other free models to try before the paid fallback
+    "free_model_cooldown": 120,  # seconds to skip a free model after it rate-limits or errors
+    # /council: these answer in parallel, then council_judge merges them. One model per provider,
+    # so their mistakes are less alike -- and none of them uses OpenRouter's daily free cap.
+    "council_models": ["groq:openai/gpt-oss-120b", "gemini:gemini-3.5-flash",
+                       "nvidia:nvidia/nemotron-3-super-120b-a12b", "cohere/north-mini-code:free"],
+    "council_judge": "nvidia:nvidia/nemotron-3-ultra-550b-a55b",
     "free_model_timeout": 30,  # seconds of silence before giving up on a free model
     "free_fallback_model": "openai/gpt-4o-mini",
     "vision_model": "openai/gpt-4o-mini",  # used for any call that carries @image attachments  # paid model used when free ones are rate-limited or fail
@@ -46,7 +63,15 @@ DEFAULT_SETTINGS = {
     "temperature_override": None,  # a number forces every LLM call to this temperature; None = each caller's own
     "aider_mode": True,
     "graphiti_mode": True,
-    "docker_sandbox": False
+    "docker_sandbox": False,
+    # OS sandbox for agent commands (core/sandbox.py; macOS for now): "auto"/"on" = use it where
+    # supported, "off" = text checks only. Inside it, writes stay in the workspace, secrets in
+    # your home folder are unreadable, and the network reaches only sandbox_allowed_domains.
+    "sandbox": "auto",
+    "sandbox_allowed_domains": [],  # empty = core.sandbox.DEFAULT_ALLOWED_DOMAINS (registries, GitHub)
+    "sandbox_allow_read": [],  # extra paths commands may read (e.g. a toolchain in your home folder)
+    "sandbox_allow_write": [],  # extra paths commands may write
+    "sandbox_allow_localhost": True,  # let commands reach servers on this machine (dev servers, DBs)
 }
 
 def get_secure_key(key_name: str, fallback: str = "") -> str:
@@ -111,6 +136,11 @@ def load_settings() -> dict:
             sai_settings.nvidia_api_key = nv_key
         except Exception:
             pass
+        # Groq / Gemini keys: keychain first, then the environment.
+        for env_name, keychain_name in (("GROQ_API_KEY", "groq_key"), ("GEMINI_API_KEY", "gemini_key")):
+            value = get_secure_key(keychain_name, os.getenv(env_name, ""))
+            if value:
+                os.environ[env_name] = value
         return data
     except Exception:
         return DEFAULT_SETTINGS
