@@ -75,6 +75,7 @@ SLASH_COMMANDS = {
     "/cost": "session cost and token usage",
     "/budget": "set a daily spending cap",
     "/council": "ask several free models, then merge their answers",
+    "/sandbox": "command sandbox status and settings",
     "/tokens": "session token usage",
 }
 
@@ -242,6 +243,9 @@ class SaiRepl:
         if preq.kind == "edit":
             return "allow all edits for the rest of this session"
         if preq.kind == "command":
+            from tools.terminal import LEAVE_SANDBOX_REASON
+            if LEAVE_SANDBOX_REASON in (preq.reason or ""):
+                return None  # leaving the sandbox is approved one run at a time
             prefix = command_allow_prefix(preq.path)
             return f"always allow `{prefix} …` this session" if prefix else None
         if preq.kind == "mcp":
@@ -572,6 +576,7 @@ class SaiRepl:
   [{TEAL}]/agents[/{TEAL}]   list all specialist agents and their roles
   [{TEAL}]/cost[/{TEAL}]     session cost in $, today's spend, tokens (alias: /tokens)
   [{TEAL}]/budget[/{TEAL}]   daily spending cap: /budget 2.50 · /budget off
+  [{TEAL}]/sandbox[/{TEAL}]  command sandbox: status · /sandbox on|off · /sandbox allow <domain>
   [{TEAL}]/council[/{TEAL}]  /council <question> -- several models answer, a judge merges them (1 request per model)
   [{TEAL}]/clear[/{TEAL}]    start a fresh session (the old one stays saved)
   [{TEAL}]/undo[/{TEAL}]     roll back the file edits from the last turn (repeat to go further back)
@@ -601,6 +606,10 @@ class SaiRepl:
 
         if cmd == "/budget":
             self._set_budget(parts[1] if len(parts) > 1 else "")
+            return
+
+        if cmd == "/sandbox":
+            self._run_sandbox_command(parts[1] if len(parts) > 1 else "")
             return
 
         if cmd == "/council":
@@ -666,6 +675,48 @@ class SaiRepl:
             return
 
         self.console.print(f"[{DIM}]Unknown command '{cmd}'. Try /help.[/{DIM}]")
+
+    def _run_sandbox_command(self, arg: str):
+        from core.sandbox import DEFAULT_ALLOWED_DOMAINS, proxy, sandbox_active, sandbox_mode
+
+        settings = load_settings()
+        words = arg.split()
+        if words and words[0] in ("on", "off", "auto"):
+            settings["sandbox"] = words[0]
+            save_settings(settings)
+        elif len(words) == 2 and words[0] in ("allow", "disallow"):
+            domains = list(settings.get("sandbox_allowed_domains") or DEFAULT_ALLOWED_DOMAINS)
+            domain = words[1].lower()
+            if words[0] == "allow" and domain not in domains:
+                domains.append(domain)
+            elif words[0] == "disallow" and domain in domains:
+                domains.remove(domain)
+            settings["sandbox_allowed_domains"] = domains
+            save_settings(settings)
+        elif words:
+            self.console.print(f"[{DIM}]Usage: /sandbox · /sandbox on|off · /sandbox allow|disallow <domain>[/{DIM}]")
+            return
+
+        active = sandbox_active(settings)
+        if active:
+            state = f"[bold {TEAL}]on[/bold {TEAL}]"
+        elif sandbox_mode(settings) == "off":
+            state = "[yellow]off[/yellow] -- commands are checked by pattern only"
+        elif settings.get("docker_sandbox"):
+            state = "off -- docker_sandbox is the boundary instead"
+        else:
+            state = "[yellow]unavailable on this OS[/yellow] -- pattern checks only"
+        domains = settings.get("sandbox_allowed_domains") or DEFAULT_ALLOWED_DOMAINS
+        self.console.print(f"\n[bold {VIOLET}]Sandbox[/bold {VIOLET}] {state}")
+        if active:
+            self.console.print(f"  writes   workspace, temp dirs, package caches"
+                               f"{' + ' + ', '.join(settings.get('sandbox_allow_write')) if settings.get('sandbox_allow_write') else ''}")
+            self.console.print("  reads    everything outside your home folder; inside it only the workspace and toolchains")
+            self.console.print(f"  network  {len(domains)} allowed domains: {escape(', '.join(domains[:6]))}"
+                               f"{', ...' if len(domains) > 6 else ''}")
+            if proxy.blocked:
+                self.console.print(f"  [{DIM}]recently blocked: {escape(', '.join(dict.fromkeys(proxy.blocked[-5:])))}"
+                                   f" -- /sandbox allow <domain> to permit one[/{DIM}]")
 
     def _run_council(self, question: str):
         from llm.attribution import short_model

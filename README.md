@@ -82,6 +82,9 @@ Your own commands: put Markdown files in `.sai/commands/` (project) or `~/.sai/c
   that command prefix for the session. Allow rules never match chained commands
   (`;`, `&&`, `|`, ...).
 - **MCP tools** ask before each use unless allowed.
+- **Sandbox** (macOS): agent commands can write only inside the workspace, can't read
+  secrets in your home folder, and reach only package registries and GitHub on the network.
+  `/sandbox` for status; `/sandbox allow <domain>`. Details in [docs/TOOLS.md](docs/TOOLS.md#os-sandbox).
 
 ### Headless
 
@@ -129,6 +132,7 @@ Settings live in `.sai/settings.json` (created on first run). The useful ones:
 | `vision_model` | `openai/gpt-4o-mini` | used for any request with an attached image |
 | `daily_budget_usd` | `0` (off) | daily spending cap for paid models |
 | `agent_max_steps` | `12` | tool-use steps per agent turn |
+| `sandbox` | `"auto"` | OS sandbox for agent commands (macOS); `"off"` to disable |
 | `docker_sandbox` | `false` | run shell commands inside Docker |
 
 Free models are slower, sometimes unavailable, and limited to 50 requests/day on

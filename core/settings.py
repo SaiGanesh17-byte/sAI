@@ -63,7 +63,15 @@ DEFAULT_SETTINGS = {
     "temperature_override": None,  # a number forces every LLM call to this temperature; None = each caller's own
     "aider_mode": True,
     "graphiti_mode": True,
-    "docker_sandbox": False
+    "docker_sandbox": False,
+    # OS sandbox for agent commands (core/sandbox.py; macOS for now): "auto"/"on" = use it where
+    # supported, "off" = text checks only. Inside it, writes stay in the workspace, secrets in
+    # your home folder are unreadable, and the network reaches only sandbox_allowed_domains.
+    "sandbox": "auto",
+    "sandbox_allowed_domains": [],  # empty = core.sandbox.DEFAULT_ALLOWED_DOMAINS (registries, GitHub)
+    "sandbox_allow_read": [],  # extra paths commands may read (e.g. a toolchain in your home folder)
+    "sandbox_allow_write": [],  # extra paths commands may write
+    "sandbox_allow_localhost": True,  # let commands reach servers on this machine (dev servers, DBs)
 }
 
 def get_secure_key(key_name: str, fallback: str = "") -> str:

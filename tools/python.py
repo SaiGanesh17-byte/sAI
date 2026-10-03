@@ -50,15 +50,20 @@ class PythonTool(BaseTool):
         if not target_path.exists():
             return f"Error: File '{script_path_str}' does not exist."
 
-        from core.security import find_risky_pattern, is_script_approved
+        from core.sandbox import explain_block, proxy, sandbox_active, sandboxed_argv
+        from core.security import SANDBOX_SAFE_PATTERNS, find_risky_pattern, is_script_approved
+        from core.settings import load_settings
         from execution.permissions import PermissionRequestRequired
+
+        settings = load_settings()
+        sandboxed = sandbox_active(settings)
 
         try:
             script_content = target_path.read_text(encoding="utf-8", errors="ignore")
         except Exception:
             script_content = ""
 
-        matched_pattern = find_risky_pattern(script_content)
+        matched_pattern = find_risky_pattern(script_content, SANDBOX_SAFE_PATTERNS if sandboxed else ())
         if matched_pattern and not is_script_approved(target_path):
             # Absolute path: approvers resolve it against their own cwd, so a
             # relative path approved the wrong file whenever sAI was launched
@@ -70,9 +75,14 @@ class PythonTool(BaseTool):
             )
 
         try:
+            argv, env = ["python3", str(target_path)], None
+            blocked_before = proxy.blocked_total
+            if sandboxed:
+                argv, env = sandboxed_argv(argv, str(workspace), settings)
             result = subprocess.run(
-                ["python3", str(target_path)],
+                argv,
                 cwd=str(workspace),
+                env=env,
                 text=True,
                 capture_output=True,
                 timeout=15
@@ -84,6 +94,8 @@ class PythonTool(BaseTool):
                 output += f"STDERR:\n{result.stderr}\n"
             if not output:
                 output = f"Python execution completed successfully with exit code {result.returncode}."
+            if sandboxed:
+                output += explain_block(output, blocked_before)
             return output
         except subprocess.TimeoutExpired:
             return "Error: Python execution timed out after 15 seconds."
